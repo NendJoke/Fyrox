@@ -367,7 +367,9 @@ impl Control for ListViewItem {
         let parent_list_view =
             self.find_by_criteria_up(ui, |node| node.cast::<ListView>().is_some());
 
-        if let Some(WidgetMessage::MouseUp { .. }) = message.data::<WidgetMessage>() {
+        if let Some(WidgetMessage::MouseUp { .. }) | Some(WidgetMessage::TouchStarted { .. }) =
+            message.data::<WidgetMessage>()
+        {
             if !message.handled() {
                 let list_view = ui
                     .node(parent_list_view)

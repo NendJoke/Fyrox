@@ -166,7 +166,7 @@ impl MessageData for DropdownListMessage {}
 /// ## Opening and Closing
 ///
 /// A dropdown list could be opened and closed manually using [`DropdownListMessage::Open`] and
-/// [`DropdownListMessage::Close`] messages.  
+/// [`DropdownListMessage::Close`] messages.
 #[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
 #[reflect(derived_type = "UiNode")]
 pub struct DropdownList {
@@ -219,7 +219,7 @@ impl Control for DropdownList {
 
         if let Some(msg) = message.data::<WidgetMessage>() {
             match msg {
-                WidgetMessage::MouseDown { .. } => {
+                WidgetMessage::MouseDown { .. } | WidgetMessage::TouchStarted { .. } => {
                     if message.destination() == self.handle()
                         || self.widget.has_descendant(message.destination(), ui)
                     {

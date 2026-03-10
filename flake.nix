@@ -11,8 +11,7 @@
     nixpkgs,
     rust-overlay,
     ...
-  }:
-  let
+  }: let
     overlays = [
       (import rust-overlay)
     ];
@@ -24,23 +23,26 @@
 
     forAllSystems = f:
       nixpkgs.lib.genAttrs systems
-      (system: f { pkgs = import nixpkgs { inherit system overlays; }; });
-  in
-  {
-    devShells = forAllSystems ({ pkgs }: with pkgs; {
-      default = mkShell rec {
-        buildInputs = [
-          rust-bin.stable.latest.default
+      (system: f {pkgs = import nixpkgs {inherit system overlays;};});
+  in {
+    devShells = forAllSystems ({pkgs}:
+      with pkgs; {
+        default = mkShell rec {
+          buildInputs = [
+            (rust-bin.stable."1.88.0".default.override {
+              extensions = ["rust-src" "rust-analyzer"];
+              targets = ["aarch64-linux-android" "armv7-linux-androideabi"];
+            })
 
-          pkg-config
-          xorg.libxcb
-          alsa-lib
-          wayland
-          libxkbcommon
-          libGL
-        ];
-        LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
-      };
-    });
+            pkg-config
+            xorg.libxcb
+            alsa-lib
+            wayland
+            libxkbcommon
+            libGL
+          ];
+          LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
+        };
+      });
   };
 }
