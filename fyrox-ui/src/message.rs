@@ -224,7 +224,7 @@ where
 {
     if value != new_value {
         *value = new_value.clone();
-        ui.send_message(message.reverse());
+        ui.try_send_response(message);
         true
     } else {
         false
@@ -513,6 +513,11 @@ impl UiMessage {
     /// Checks if the message has particular flags.
     pub fn has_flags(&self, flags: u64) -> bool {
         self.flags & flags != 0
+    }
+
+    /// Checks if the message is intended for syncing.
+    pub fn is_sync(&self) -> bool {
+        self.delivery_mode == DeliveryMode::SyncOnly
     }
 }
 
