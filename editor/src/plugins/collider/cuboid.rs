@@ -152,7 +152,6 @@ impl ShapeGizmoTrait for CuboidShapeGizmo {
         value: ShapeHandleValue,
         collider: Handle<Node>,
         scene: &mut Scene,
-        initial_collider_local_position: Vector3<f32>,
     ) {
         let Ok(collider) = scene.graph.try_get_mut_of_type::<Collider>(collider) else {
             return;
@@ -170,28 +169,10 @@ impl ShapeGizmoTrait for CuboidShapeGizmo {
             cuboid.half_extents.z = value.into_scalar().max(0.0);
         } else if handle == self.neg_x_handle {
             cuboid.half_extents.x = value.into_scalar().max(0.0);
-            let transform = collider.local_transform_mut();
-            transform.set_position(Vector3::new(
-                initial_collider_local_position.x - value.into_scalar() / 2.0,
-                initial_collider_local_position.y,
-                initial_collider_local_position.z,
-            ));
         } else if handle == self.neg_y_handle {
             cuboid.half_extents.y = value.into_scalar().max(0.0);
-            let transform = collider.local_transform_mut();
-            transform.set_position(Vector3::new(
-                initial_collider_local_position.x,
-                initial_collider_local_position.y - value.into_scalar() / 2.0,
-                initial_collider_local_position.z,
-            ));
         } else if handle == self.neg_z_handle {
             cuboid.half_extents.z = value.into_scalar().max(0.0);
-            let transform = collider.local_transform_mut();
-            transform.set_position(Vector3::new(
-                initial_collider_local_position.x,
-                initial_collider_local_position.y,
-                initial_collider_local_position.z - value.into_scalar() / 2.0,
-            ));
         }
     }
 }
