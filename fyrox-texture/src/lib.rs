@@ -77,6 +77,7 @@ use std::{
 use strum_macros::{AsRefStr, EnumString, VariantNames};
 
 pub mod loader;
+pub mod sampler;
 
 /// Texture kind.
 #[derive(Copy, Clone, Debug, Reflect, AsRefStr, EnumString, VariantNames, TypeUuidProvider)]
@@ -227,12 +228,6 @@ impl Visit for TextureKind {
 /// Data storage of a texture.
 #[derive(Default, Clone, Reflect)]
 pub struct TextureBytes(Vec<u8>);
-
-impl Visit for TextureBytes {
-    fn visit(&mut self, name: &str, visitor: &mut Visitor) -> VisitResult {
-        self.0.visit(name, visitor)
-    }
-}
 
 impl Debug for TextureBytes {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
