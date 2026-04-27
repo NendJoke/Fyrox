@@ -50,19 +50,18 @@ impl Selectable {
     ) -> bool {
         if let Some(msg) = message.data::<WidgetMessage>() {
             match msg {
-                WidgetMessage::MouseDown { button, .. } => {
+                WidgetMessage::MouseDown { button, .. }
                     if (*button == MouseButton::Left || *button == MouseButton::Right)
-                        && !self.selected
-                    {
-                        ui.send(self_handle, SelectableMessage::Select(true));
+                        && !self.selected =>
+                {
+                    ui.send(self_handle, SelectableMessage::Select(true));
 
-                        ui.capture_mouse(self_handle);
-                    }
+                    ui.capture_mouse(self_handle);
                 }
-                WidgetMessage::MouseUp { button, .. } => {
-                    if *button == MouseButton::Left || *button == MouseButton::Right {
-                        ui.release_mouse_capture();
-                    }
+                WidgetMessage::MouseUp { button, .. }
+                    if (*button == MouseButton::Left || *button == MouseButton::Right) =>
+                {
+                    ui.release_mouse_capture();
                 }
                 _ => {}
             }

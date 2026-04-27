@@ -117,7 +117,6 @@ use fyrox_sound::{
     buffer::{loader::SoundBufferLoader, SoundBuffer},
     renderer::hrtf::{HrirSphereLoader, HrirSphereResourceData},
 };
-use fyrox_texture::sampler::TextureSamplerLoader;
 use std::{
     any::TypeId,
     cell::Cell,
@@ -164,6 +163,12 @@ impl SerializationContext {
             node_constructors: new_node_constructor_container(),
             script_constructors: ScriptConstructorContainer::new(),
         }
+    }
+
+    /// Removes all registered constructors.
+    pub fn clear(&self) {
+        self.node_constructors.clear();
+        self.script_constructors.clear();
     }
 }
 
@@ -316,7 +321,6 @@ pub struct Engine {
 
     model_events_receiver: Receiver<ResourceEvent>,
 
-    #[allow(dead_code)] // Keep engine instance alive.
     sound_engine: SoundEngine,
 
     // A set of plugins used by the engine.
@@ -1296,7 +1300,6 @@ pub(crate) fn initialize_resource_manager_loaders(
     loaders.set(TextureLoader {
         default_import_options: Default::default(),
     });
-    loaders.set(TextureSamplerLoader);
     loaders.set(SoundBufferLoader {
         default_import_options: Default::default(),
     });
@@ -1434,7 +1437,7 @@ impl Engine {
         let (rx, tx) = channel();
         resource_manager.state().event_broadcaster.add(rx);
 
-        let sound_engine = SoundEngine::without_device();
+        let sound_engine = SoundEngine::without_device(SoundEngine::DEFAULT_SAMPLE_RATE);
 
         Ok(Self {
             graphics_context: GraphicsContext::Uninitialized(graphics_context_params),
@@ -1501,6 +1504,17 @@ impl Engine {
                 "Graphics context is already initialized!".to_string(),
             ))
         }
+    }
+
+    /// Returns current sample rate of the sound engine.
+    pub fn sound_sample_rate(&self) -> u32 {
+        self.sound_engine.sample_rate()
+    }
+
+    /// Normalizes given frequency using sampling rate of the sound output device. Normalized frequency
+    /// then can be used to create filters.
+    pub fn normalize_sound_frequency(&self, f: f32) -> f32 {
+        self.sound_engine.normalize_frequency(f)
     }
 
     /// Tries to destroy current graphics context. It will succeed only if the `graphics_context` is fully initialized.
@@ -1897,6 +1911,8 @@ impl Engine {
                 .collect::<VecDeque<_>>();
 
             while let Some(ui) = uis.pop_front() {
+                let mut processed_messages = 0;
+
                 while let Some(message) = self
                     .user_interfaces
                     .try_get_mut(ui)
@@ -1927,6 +1943,17 @@ impl Engine {
                             plugin.on_ui_message(&mut context, &message, ui),
                             &mut self.error_queue,
                         );
+                    }
+
+                    processed_messages += 1;
+
+                    if processed_messages >= 8192 {
+                        warn!(
+                            "Potential infinite message loop detected \
+                            while processing message:\n{message:?}\nfrom {ui} user interface!\n\
+                            Consider sending a message via send_sync to break the loop."
+                        );
+                        break;
                     }
                 }
             }
@@ -2797,6 +2824,16 @@ impl Drop for Engine {
             self.scenes.remove(handle);
         }
 
+        // Clear everything that may potentially store a dynamic plugin entity.
+        if let GraphicsContext::Initialized(ref mut graphics_context) = self.graphics_context {
+            graphics_context.renderer.clear_render_passes();
+        }
+        self.user_interfaces.clear();
+        self.scenes.clear();
+        self.serialization_context.clear();
+        self.widget_constructors.clear();
+        self.dyn_type_constructors.clear();
+
         // Finally disable plugins.
         self.enable_plugins(
             None,
@@ -2805,6 +2842,11 @@ impl Drop for Engine {
                 running: &Default::default(),
             },
         );
+
+        // Must be last, otherwise the engine will crash on shutdown when compiled in native code
+        // hot reloading. This may happen if some of the dynamic plugin entities are dropped after
+        // the parent plugin.
+        self.plugins.clear();
     }
 }
 

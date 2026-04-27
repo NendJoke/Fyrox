@@ -226,15 +226,13 @@ impl Control for DropdownList {
                         ui.send(self.handle, DropdownListMessage::Open);
                     }
                 }
-                WidgetMessage::KeyDown(key_code) => {
-                    if !message.handled() {
-                        if *key_code == KeyCode::ArrowDown {
-                            ui.send(self.handle, DropdownListMessage::Open);
-                        } else if *key_code == KeyCode::ArrowUp {
-                            ui.send(self.handle, DropdownListMessage::Close);
-                        }
-                        message.set_handled(true);
+                WidgetMessage::KeyDown(key_code) if !message.handled() => {
+                    if *key_code == KeyCode::ArrowDown {
+                        ui.send(self.handle, DropdownListMessage::Open);
+                    } else if *key_code == KeyCode::ArrowUp {
+                        ui.send(self.handle, DropdownListMessage::Close);
                     }
+                    message.set_handled(true);
                 }
                 _ => (),
             }
