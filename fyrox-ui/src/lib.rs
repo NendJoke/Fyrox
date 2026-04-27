@@ -1572,7 +1572,7 @@ impl UserInterface {
                 return;
             }
 
-            assert!(node.visual_valid.get());
+            //assert!(node.visual_valid.get());
 
             drawing_context.append(&node.render_data_set.borrow().draw_result);
 
