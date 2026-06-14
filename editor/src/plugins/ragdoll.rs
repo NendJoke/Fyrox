@@ -27,7 +27,7 @@ use crate::{
             math::Matrix4Ext,
             pool::Handle,
             reflect::prelude::*,
-            some_or_return, uuid, Uuid,
+            some_or_return,
         },
         graph::SceneGraph,
         gui::{
@@ -74,7 +74,8 @@ use fyrox::scene::joint::Joint;
 use fyrox::scene::ragdoll::Ragdoll;
 use std::{ops::Range, sync::Arc};
 
-#[derive(Reflect, Clone, Debug)]
+#[derive(PartialEq, Reflect, Clone, Debug)]
+#[reflect(type_uuid = "07d73807-1716-4ea6-bef4-91903c214f7e")]
 pub struct RagdollPreset {
     /// A handle of a hips (pelvis) bone.
     hips: Handle<Node>,
@@ -1058,6 +1059,7 @@ impl RagdollWizard {
                                 generate_property_string_values: true,
                                 filter: Default::default(),
                                 name_column_width: 150.0,
+                                hide_name_column: false,
                                 base_path: Default::default(),
                                 has_parent_object: false,
                             }))

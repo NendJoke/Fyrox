@@ -20,8 +20,8 @@
 
 use crate::fyrox::{
     core::{
-        make_pretty_type_name, parking_lot::Mutex, pool::Handle, reflect::prelude::*,
-        sstorage::ImmutableString, type_traits::prelude::*, uuid_provider, visitor::prelude::*,
+        make_pretty_type_name, pool::Handle, reflect::prelude::*, sstorage::ImmutableString,
+        visitor::prelude::*,
     },
     fxhash::FxHashSet,
     graph::SceneGraph,
@@ -50,10 +50,10 @@ use fyrox::gui::style::resource::StyleResourceExt;
 use fyrox::gui::style::Style;
 use fyrox::gui::text_box::EmptyTextPlaceholder;
 use fyrox::gui::tree::TreeRoot;
+use fyrox::gui::widget::UserData;
 use std::{
     any::TypeId,
     ops::{Deref, DerefMut},
-    sync::Arc,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,7 +106,7 @@ fn apply_filter_recursive(node: Handle<UiNode>, filter: &str, ui: &UserInterface
     }
 
     if let Some(data) = node_ref
-        .query_component::<Tree>()
+        .self_or_field_ref::<Tree>()
         .and_then(|n| n.user_data_cloned::<PropertyDescriptorData>())
     {
         is_any_match |= data.name.to_lowercase().contains(filter);
@@ -140,13 +140,13 @@ impl PropertyDescriptor {
                 make_pretty_type_name(&self.type_name)
             );
 
-            TreeBuilder::new(WidgetBuilder::new().with_user_data(Arc::new(Mutex::new(
+            TreeBuilder::new(WidgetBuilder::new().with_user_data(UserData::new(
                 PropertyDescriptorData {
                     name: name.clone(),
                     path: self.path.clone(),
                     type_id: self.type_id,
                 },
-            ))))
+            )))
             .with_items(items)
             .with_content(
                 TextBuilder::new(WidgetBuilder::new().with_margin(Thickness::uniform(1.0)))
@@ -176,7 +176,7 @@ where
                 continue;
             }
 
-            let field_ref = field_info.value.field_value_as_reflect();
+            let field_ref = field_info.value;
 
             let path = if parent_path.is_empty() {
                 field_info.name.to_owned()
@@ -186,12 +186,12 @@ where
 
             let mut processed = true;
 
-            field_ref.as_array(&mut |array| match array {
+            match field_ref.as_array() {
                 Some(array) => {
                     let mut descriptor = PropertyDescriptor {
                         path: path.clone(),
                         display_name: field_info.display_name.to_owned(),
-                        type_name: field_info.value.type_name().to_owned(),
+                        type_name: field_info.value.type_info_ref().type_name.to_owned(),
                         type_id: field_info.value.type_id(),
                         children_properties: Default::default(),
                         read_only: field_info.read_only,
@@ -203,7 +203,7 @@ where
                             descriptor.children_properties.push(PropertyDescriptor {
                                 path: item_path.clone(),
                                 display_name: format!("[{i}]"),
-                                type_name: item.type_name().to_owned(),
+                                type_name: item.type_info_ref().type_name.to_owned(),
                                 type_id: item.type_id(),
                                 read_only: field_info.read_only,
                                 children_properties: object_to_property_tree(
@@ -218,15 +218,15 @@ where
                 None => {
                     processed = false;
                 }
-            });
+            }
 
             if !processed {
-                field_ref.as_hash_map(&mut |result| match result {
+                match field_ref.as_hash_map() {
                     Some(hash_map) => {
                         let mut descriptor = PropertyDescriptor {
                             path: path.clone(),
                             display_name: field_info.display_name.to_owned(),
-                            type_name: field_info.value.type_name().to_owned(),
+                            type_name: field_info.value.type_info_ref().type_name.to_owned(),
                             type_id: field_info.value.type_id(),
                             children_properties: Default::default(),
                             read_only: field_info.read_only,
@@ -239,13 +239,8 @@ where
                             // fine for most cases in the engine.
                             let mut key_str = format!("{key:?}");
 
-                            let mut is_key_string = false;
-                            key.downcast_ref::<String>(&mut |string| {
-                                is_key_string |= string.is_some()
-                            });
-                            key.downcast_ref::<ImmutableString>(&mut |string| {
-                                is_key_string |= string.is_some()
-                            });
+                            let is_key_string = key.downcast_ref::<String>().is_some()
+                                || key.downcast_ref::<ImmutableString>().is_some();
 
                             if is_key_string {
                                 // Strip quotes at the beginning and the end, because Debug impl for String adds
@@ -260,7 +255,7 @@ where
                             descriptor.children_properties.push(PropertyDescriptor {
                                 path: item_path.clone(),
                                 display_name: format!("[{key_str}]"),
-                                type_name: value.type_name().to_owned(),
+                                type_name: value.type_info_ref().type_name.to_owned(),
                                 type_id: value.type_id(),
                                 read_only: field_info.read_only,
                                 children_properties: object_to_property_tree(
@@ -276,13 +271,13 @@ where
                     None => {
                         processed = false;
                     }
-                })
+                }
             }
 
             if !processed {
                 descriptors.push(PropertyDescriptor {
                     display_name: field_info.display_name.to_owned(),
-                    type_name: field_info.value.type_name().to_owned(),
+                    type_name: field_info.value.type_info_ref().type_name.to_owned(),
                     type_id: field_info.value.type_id(),
                     read_only: field_info.read_only,
                     children_properties: object_to_property_tree(&path, field_ref, filter),
@@ -295,8 +290,11 @@ where
     descriptors
 }
 
-#[derive(Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "8e58e123-48a1-4e18-9e90-fd35a1669bdc"
+)]
 pub struct PropertySelector {
     widget: Widget,
     #[reflect(hidden)]
@@ -309,8 +307,6 @@ pub struct PropertySelector {
 
 define_widget_deref!(PropertySelector);
 
-uuid_provider!(PropertySelector = "8e58e123-48a1-4e18-9e90-fd35a1669bdc");
-
 impl PropertySelector {
     fn find_selected_tree_items(&self, ui: &UserInterface) -> Vec<Handle<Tree>> {
         let mut stack = vec![self.tree_root.to_base()];
@@ -319,7 +315,7 @@ impl PropertySelector {
         while let Some(node_handle) = stack.pop() {
             let node = ui.node(node_handle);
 
-            if let Some(tree) = node.query_component::<Tree>() {
+            if let Some(tree) = node.self_or_field_ref::<Tree>() {
                 if self.selected_property_paths.iter().any(|path| {
                     path.path
                         == tree
@@ -484,10 +480,12 @@ impl PropertySelectorBuilder {
     }
 }
 
-#[derive(Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "725e4a10-eca6-4345-9833-d54dae2f20f2"
+)]
 pub struct PropertySelectorWindow {
-    #[component(include)]
     window: Window,
     selector: Handle<PropertySelector>,
     ok: Handle<Button>,
@@ -520,8 +518,6 @@ impl PropertySelectorWindow {
         ui.send(self.handle, WindowMessage::Close);
     }
 }
-
-uuid_provider!(PropertySelectorWindow = "725e4a10-eca6-4345-9833-d54dae2f20f2");
 
 impl Control for PropertySelectorWindow {
     control_trait_proxy_impls!(window);

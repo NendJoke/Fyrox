@@ -28,8 +28,7 @@ use crate::{
     brush::Brush,
     check_box::{CheckBoxBuilder, CheckBoxMessage},
     core::{
-        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        visitor::prelude::*,
+        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*, visitor::prelude::*,
     },
     decorator::{DecoratorBuilder, DecoratorMessage},
     grid::{Column, GridBuilder, Row},
@@ -47,7 +46,7 @@ use crate::check_box::CheckBox;
 use crate::message::MessageData;
 use crate::stack_panel::StackPanel;
 use fyrox_core::pool::{HandlesVecExtension, ObjectOrVariant};
-use fyrox_core::uuid_provider;
+
 use fyrox_graph::constructor::{ConstructorProvider, GraphNodeConstructor};
 use fyrox_graph::SceneGraph;
 use std::collections::VecDeque;
@@ -293,8 +292,11 @@ impl MessageData for TreeRootMessage {}
 ///     });
 /// }
 /// ```
-#[derive(Default, Debug, Clone, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Debug, Clone, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "e090e913-393a-4192-a220-e1d87e272170"
+)]
 pub struct Tree {
     /// Base widget of the tree.
     pub widget: Widget,
@@ -332,8 +334,6 @@ impl ConstructorProvider<UiNode, UserInterface> for Tree {
 
 crate::define_widget_deref!(Tree);
 
-uuid_provider!(Tree = "e090e913-393a-4192-a220-e1d87e272170");
-
 impl Control for Tree {
     fn arrange_override(&self, ui: &UserInterface, final_size: Vector2<f32>) -> Vector2<f32> {
         let size = self.widget.arrange_override(ui, final_size);
@@ -370,7 +370,7 @@ impl Control for Tree {
                         // Prevent selection changes by Alt+Click to be able to drag'n'drop tree items.
                         if !keyboard_modifiers.alt {
                             if let Some((tree_root_handle, tree_root)) =
-                                ui.find_component_up::<TreeRoot>(self.parent())
+                                ui.find_self_or_field_up::<TreeRoot>(self.parent())
                             {
                                 let selection = if keyboard_modifiers.control {
                                     let mut selection = tree_root.selected.clone();
@@ -412,7 +412,7 @@ impl Control for Tree {
                                                 }
                                             }
 
-                                            if node.query_component::<Tree>().is_some() {
+                                            if node.self_or_field_ref::<Tree>().is_some() {
                                                 hierarchy.push(handle.to_variant());
                                             }
 
@@ -809,8 +809,11 @@ fn build_expander(
 ///     ui.send(tree, TreeRootMessage::Select(new_selection));
 /// }
 /// ```
-#[derive(Default, Debug, Clone, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Debug, Clone, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "cf7c0476-f779-4e4b-8b7e-01a23ff51a72"
+)]
 pub struct TreeRoot {
     /// Base widget of the tree root.
     pub widget: Widget,
@@ -836,8 +839,6 @@ impl ConstructorProvider<UiNode, UserInterface> for TreeRoot {
 }
 
 crate::define_widget_deref!(TreeRoot);
-
-uuid_provider!(TreeRoot = "cf7c0476-f779-4e4b-8b7e-01a23ff51a72");
 
 impl Control for TreeRoot {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
@@ -921,7 +922,7 @@ impl Control for TreeRoot {
                                     );
                                     message.set_handled(true);
                                 } else if let Some((parent_handle, _)) =
-                                    ui.find_component_up::<Tree>(item.parent())
+                                    ui.find_self_or_field_up::<Tree>(item.parent())
                                 {
                                     ui.send(
                                         self.handle,
@@ -987,7 +988,7 @@ impl TreeRoot {
             }
 
             let (parent_handle, parent_items, parent_ancestor, is_parent_root) = ui
-                .find_component_up::<Tree>(item.parent())
+                .find_self_or_field_up::<Tree>(item.parent())
                 .map(|(tree_handle, tree)| {
                     (
                         tree_handle.to_variant::<Tree>(),
@@ -1047,7 +1048,7 @@ impl TreeRoot {
                         let mut current_ancestor = parent_handle;
                         let mut current_ancestor_parent = parent_ancestor;
                         while let Some((ancestor_handle, ancestor)) =
-                            ui.find_component_up::<Tree>(current_ancestor_parent)
+                            ui.find_self_or_field_up::<Tree>(current_ancestor_parent)
                         {
                             if ancestor.is_expanded {
                                 if let Some(current_ancestor_position) =

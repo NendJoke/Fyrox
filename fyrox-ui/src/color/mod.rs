@@ -27,7 +27,6 @@ use crate::{
         math::Rect,
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
         visitor::prelude::*,
     },
     draw::{CommandTexture, Draw, DrawingContext},
@@ -45,7 +44,6 @@ use crate::message::MessageData;
 use crate::numeric::NumericUpDown;
 use crate::popup::Popup;
 use crate::text::Text;
-use fyrox_core::uuid_provider;
 use fyrox_graph::constructor::{ConstructorProvider, GraphNodeConstructor};
 use fyrox_material::MaterialResource;
 use std::{ops::Deref, sync::mpsc::Sender};
@@ -105,8 +103,11 @@ pub enum ColorFieldMessage {
 }
 impl MessageData for ColorFieldMessage {}
 
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "956d4cae-7953-486b-99da-a9b852c2e144"
+)]
 pub struct AlphaBar {
     pub widget: Widget,
     pub orientation: Orientation,
@@ -249,8 +250,6 @@ pub fn draw_checker_board(
     );
 }
 
-uuid_provider!(AlphaBar = "956d4cae-7953-486b-99da-a9b852c2e144");
-
 impl Control for AlphaBar {
     fn draw(&self, drawing_context: &mut DrawingContext) {
         let bounds = self.bounding_rect();
@@ -385,8 +384,11 @@ impl AlphaBarBuilder {
     }
 }
 
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "af28f977-85e7-4c9e-9a61-7f208844acb5"
+)]
 pub struct HueBar {
     pub widget: Widget,
     pub orientation: Orientation,
@@ -419,8 +421,6 @@ impl HueBar {
         k.clamp(0.0, 1.0) * 360.0
     }
 }
-
-uuid_provider!(HueBar = "af28f977-85e7-4c9e-9a61-7f208844acb5");
 
 impl Control for HueBar {
     fn draw(&self, drawing_context: &mut DrawingContext) {
@@ -547,8 +547,11 @@ impl HueBarBuilder {
     }
 }
 
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "ab6bfad5-0c4b-42a5-8da5-fc5687b1afc7"
+)]
 pub struct SaturationBrightnessField {
     pub widget: Widget,
     pub is_picking: bool,
@@ -586,8 +589,6 @@ impl SaturationBrightnessField {
                 * 100.0
     }
 }
-
-uuid_provider!(SaturationBrightnessField = "ab6bfad5-0c4b-42a5-8da5-fc5687b1afc7");
 
 impl Control for SaturationBrightnessField {
     fn arrange_override(&self, ui: &UserInterface, final_size: Vector2<f32>) -> Vector2<f32> {
@@ -763,8 +764,11 @@ impl SaturationBrightnessFieldBuilder {
     }
 }
 
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "b7a5d650-5b77-4938-83c1-37f3fe107885"
+)]
 pub struct ColorPicker {
     pub widget: Widget,
     pub hue_bar: Handle<HueBar>,
@@ -812,8 +816,6 @@ impl ColorPicker {
         ui.send_handled(self.color_mark, WidgetMessage::Background(background));
     }
 }
-
-uuid_provider!(ColorPicker = "b7a5d650-5b77-4938-83c1-37f3fe107885");
 
 impl Control for ColorPicker {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
@@ -1152,8 +1154,11 @@ impl ColorPickerBuilder {
     }
 }
 
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "68dec1ac-23c6-41df-bc85-499f2a82e908"
+)]
 pub struct ColorField {
     pub widget: Widget,
     pub popup: Handle<Popup>,
@@ -1175,8 +1180,6 @@ impl ConstructorProvider<UiNode, UserInterface> for ColorField {
 }
 
 crate::define_widget_deref!(ColorField);
-
-uuid_provider!(ColorField = "68dec1ac-23c6-41df-bc85-499f2a82e908");
 
 impl Control for ColorField {
     fn on_remove(&self, sender: &Sender<UiMessage>) {

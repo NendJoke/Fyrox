@@ -26,7 +26,7 @@
 use crate::{
     core::{
         algebra::Vector2, log::Log, math::Rect, pool::Handle, reflect::prelude::*,
-        type_traits::prelude::*, uuid_provider, variable::InheritableVariable, visitor::prelude::*,
+        variable::InheritableVariable, visitor::prelude::*,
     },
     draw::{CommandTexture, Draw, DrawingContext},
     message::UiMessage,
@@ -59,6 +59,7 @@ impl MessageData for GridMessage {}
 #[derive(
     Clone, Copy, PartialEq, Eq, Debug, Reflect, Visit, Default, AsRefStr, EnumString, VariantNames,
 )]
+#[reflect(type_uuid = "9c5dfbce-5df2-4a7f-8c57-c4473743a718")]
 pub enum SizeMode {
     /// The desired size of this dimension must be provided in advance,
     /// and it will always be rendered with exactly that size, regardless of what nodes it contains.
@@ -73,10 +74,9 @@ pub enum SizeMode {
     Stretch,
 }
 
-uuid_provider!(SizeMode = "9c5dfbce-5df2-4a7f-8c57-c4473743a718");
-
 /// Grid dimension defines sizing rules and constraints for [`Grid`]'s rows and columns.
 #[derive(Clone, Copy, PartialEq, Debug, Reflect, Visit, Default)]
+#[reflect(type_uuid = "5e894900-c14a-4eb6-acb9-1636efead4b4")]
 pub struct GridDimension {
     /// Current size mode of the dimension.
     pub size_mode: SizeMode,
@@ -99,8 +99,6 @@ pub struct GridDimension {
     #[reflect(hidden)]
     unmeasured_node_count: usize,
 }
-
-uuid_provider!(GridDimension = "5e894900-c14a-4eb6-acb9-1636efead4b4");
 
 impl GridDimension {
     /// Generic constructor for [`GridDimension`].
@@ -219,8 +217,11 @@ pub type Row = GridDimension;
 /// You can add any number of rows and columns to a grid widget, and each grid cell does **not** need to have a UI widget
 /// in it to be valid. For example, you can add a column and set it to a specific size via strict to provide spacing between
 /// two other columns.
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "98ce15e2-bd62-497d-a37b-9b1cb4a1918c"
+)]
 pub struct Grid {
     /// Base widget of the grid.
     pub widget: Widget,
@@ -261,7 +262,7 @@ crate::define_widget_deref!(Grid);
 
 /// Cell of the grid, that contains additional information for layout purposes. It does not have any
 /// particular use outside of grid's internals.
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Cell {
     /// A set of nodes of the cell.
     pub nodes: Vec<Handle<UiNode>>,
@@ -401,8 +402,6 @@ fn arrange_dims(dims: &mut [GridDimension], final_size: f32) {
     }
 }
 
-uuid_provider!(Grid = "98ce15e2-bd62-497d-a37b-9b1cb4a1918c");
-
 impl Grid {
     fn initialize_measure(&self, ui: &UserInterface) {
         self.calc_needed_measurements(ui);
@@ -457,7 +456,7 @@ impl Grid {
             let Some(row) = rows.get_mut(node.row()) else {
                 Log::err(format!(
                     "Node row out of bounds: {} row:{}, column:{}",
-                    Reflect::type_name(node),
+                    node.type_info_ref().type_name,
                     node.row(),
                     node.column()
                 ));
@@ -466,7 +465,7 @@ impl Grid {
             let Some(col) = cols.get_mut(node.column()) else {
                 Log::err(format!(
                     "Node column out of bounds: {} row:{}, column:{}",
-                    Reflect::type_name(node),
+                    node.type_info_ref().type_name,
                     node.row(),
                     node.column()
                 ));

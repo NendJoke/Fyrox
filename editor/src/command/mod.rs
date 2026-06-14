@@ -24,42 +24,40 @@ use crate::fyrox::{
         reflect::{
             is_path_to_array_element, Reflect, ResolvePath, SetFieldByPathError, SetFieldError,
         },
-        some_or_return, ComponentProvider,
+        some_or_return,
     },
     gui::inspector::{PropertyAction, PropertyChanged},
 };
 use std::{
-    any::{type_name, TypeId},
+    any::type_name,
     fmt::{Debug, Formatter},
     ops::{Deref, DerefMut, RangeBounds},
 };
 
 pub mod panel;
 
-pub trait CommandContext: ComponentProvider {}
+pub trait CommandContext: Reflect {}
 
 impl dyn CommandContext + '_ {
-    pub fn component_ref<T>(&self) -> Option<&T>
+    pub fn self_or_field_ref<T>(&self) -> Option<&T>
     where
-        T: 'static,
+        T: Reflect,
     {
-        self.query_component_ref(TypeId::of::<T>())
-            .and_then(|c| c.downcast_ref())
+        (self as &dyn Reflect).self_or_field_ref()
     }
 
-    pub fn component_mut<T>(&mut self) -> Option<&mut T>
+    pub fn self_or_field_mut<T>(&mut self) -> Option<&mut T>
     where
-        T: 'static,
+        T: Reflect,
     {
-        self.query_component_mut(TypeId::of::<T>())
-            .and_then(|c| c.downcast_mut())
+        (self as &mut dyn Reflect).self_or_field_mut()
     }
 
     pub fn get<T>(&self) -> &T
     where
-        T: 'static,
+        T: Reflect,
     {
-        self.component_ref().unwrap_or_else(|| {
+        self.self_or_field_ref().unwrap_or_else(|| {
             panic!(
                 "Unable to downcast command context to {} type",
                 type_name::<T>()
@@ -69,9 +67,9 @@ impl dyn CommandContext + '_ {
 
     pub fn get_mut<T>(&mut self) -> &mut T
     where
-        T: 'static,
+        T: Reflect,
     {
-        self.component_mut().unwrap_or_else(|| {
+        self.self_or_field_mut().unwrap_or_else(|| {
             panic!(
                 "Unable to downcast command context to {} type",
                 type_name::<T>()
@@ -430,8 +428,8 @@ impl<F: EntityGetter> SetPropertyCommand<F> {
                             "Failed to set property {}! Incompatible types. \
                             Target property: {}. Value: {}!",
                             self.path,
-                            property.type_name(),
-                            current_value.type_name()
+                            property.type_info_ref().type_name,
+                            current_value.type_info_ref().type_name
                         );
                         self.value = Some(current_value);
                     }
@@ -464,7 +462,7 @@ impl<F: EntityGetter> SetPropertyCommand<F> {
                                     Target property: {}. Value: {}!",
                                     self.path,
                                     field_type_name,
-                                    value.type_name()
+                                    value.type_info_ref().type_name
                                 );
 
                                 value
@@ -487,7 +485,7 @@ impl<F: EntityGetter> SetPropertyCommand<F> {
                                     Target property: {}. Value: {}!",
                                         self.path,
                                         field_type_name,
-                                        value.type_name()
+                                        value.type_info_ref().type_name
                                     );
 
                                     value
@@ -546,38 +544,34 @@ impl<F: EntityGetter> CommandTrait for AddCollectionItemCommand<F> {
     fn execute(&mut self, ctx: &mut dyn CommandContext) {
         let entity = some_or_return!((self.entity_getter)(ctx));
         try_modify_property(entity, &self.path, |field| {
-            field.as_list_mut(&mut |result| {
-                if let Some(list) = result {
-                    if let Err(item) = list.reflect_push(self.item.take().unwrap()) {
-                        err!(
-                            "Failed to push item to {} collection. Type mismatch {} and {}!",
-                            self.path,
-                            item.type_name(),
-                            list.type_name()
-                        );
-                        self.item = Some(item);
-                    }
-                } else {
-                    err!("Property {} is not a collection!", self.path)
+            if let Some(list) = field.as_list_mut() {
+                if let Err(item) = list.reflect_push(self.item.take().unwrap()) {
+                    err!(
+                        "Failed to push item to {} collection. Type mismatch {} and {}!",
+                        self.path,
+                        item.type_info_ref().type_name,
+                        list.type_info_ref().type_name
+                    );
+                    self.item = Some(item);
                 }
-            });
+            } else {
+                err!("Property {} is not a collection!", self.path)
+            }
         })
     }
 
     fn revert(&mut self, ctx: &mut dyn CommandContext) {
         let entity = some_or_return!((self.entity_getter)(ctx));
         try_modify_property(entity, &self.path, |field| {
-            field.as_list_mut(&mut |result| {
-                if let Some(list) = result {
-                    if let Some(item) = list.reflect_pop() {
-                        self.item = Some(item);
-                    } else {
-                        err!("Failed to pop item from {} collection!", self.path)
-                    }
+            if let Some(list) = field.as_list_mut() {
+                if let Some(item) = list.reflect_pop() {
+                    self.item = Some(item);
                 } else {
-                    err!("Property {} is not a collection!", self.path)
+                    err!("Failed to pop item from {} collection!", self.path)
                 }
-            });
+            } else {
+                err!("Property {} is not a collection!", self.path)
+            }
         })
     }
 }
@@ -614,32 +608,28 @@ impl<F: EntityGetter> CommandTrait for RemoveCollectionItemCommand<F> {
     fn execute(&mut self, ctx: &mut dyn CommandContext) {
         let entity = some_or_return!((self.entity_getter)(ctx));
         try_modify_property(entity, &self.path, |field| {
-            field.as_list_mut(&mut |result| {
-                if let Some(list) = result {
-                    self.value = list.reflect_remove(self.index);
-                } else {
-                    err!("Property {} is not a collection!", self.path)
-                }
-            })
+            if let Some(list) = field.as_list_mut() {
+                self.value = list.reflect_remove(self.index);
+            } else {
+                err!("Property {} is not a collection!", self.path)
+            }
         })
     }
 
     fn revert(&mut self, ctx: &mut dyn CommandContext) {
         let entity = some_or_return!((self.entity_getter)(ctx));
         try_modify_property(entity, &self.path, |field| {
-            field.as_list_mut(&mut |result| {
-                if let Some(list) = result {
-                    if let Err(item) = list.reflect_insert(self.index, self.value.take().unwrap()) {
-                        self.value = Some(item);
-                        err!(
-                            "Failed to insert item to {} collection. Type mismatch!",
-                            self.path
-                        )
-                    }
-                } else {
-                    err!("Property {} is not a collection!", self.path)
+            if let Some(list) = field.as_list_mut() {
+                if let Err(item) = list.reflect_insert(self.index, self.value.take().unwrap()) {
+                    self.value = Some(item);
+                    err!(
+                        "Failed to insert item to {} collection. Type mismatch!",
+                        self.path
+                    )
                 }
-            });
+            } else {
+                err!("Property {} is not a collection!", self.path)
+            }
         })
     }
 }

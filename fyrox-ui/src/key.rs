@@ -27,10 +27,7 @@ use crate::message::MessageData;
 use crate::text::Text;
 use crate::{
     brush::Brush,
-    core::{
-        color::Color, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        visitor::prelude::*,
-    },
+    core::{color::Color, pool::Handle, reflect::prelude::*, visitor::prelude::*},
     define_widget_deref,
     draw::{CommandTexture, Draw, DrawingContext},
     message::{KeyCode, KeyboardModifiers, MouseButton, UiMessage},
@@ -38,7 +35,6 @@ use crate::{
     widget::{Widget, WidgetBuilder, WidgetMessage},
     BuildContext, Control, UiNode, UserInterface,
 };
-use fyrox_core::uuid_provider;
 use fyrox_core::variable::InheritableVariable;
 use fyrox_graph::constructor::{ConstructorProvider, GraphNodeConstructor};
 use serde::{Deserialize, Serialize};
@@ -46,6 +42,7 @@ use std::fmt::{Display, Formatter};
 
 /// Hot key is a combination of a key code with an arbitrary set of keyboard modifiers (such as Ctrl, Shift, Alt keys).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Reflect, Default, Visit)]
+#[reflect(type_uuid = "ce03ca6f-078a-42bb-98ac-232f5427da2a")]
 pub enum HotKey {
     /// Unset hot key. Does nothing. This is the default value.
     #[default]
@@ -190,8 +187,11 @@ impl MessageData for HotKeyEditorMessage {}
 /// ## Messages
 ///
 /// Use [`HotKeyEditorMessage`] message to alternate the state of a hot key widget, or to listen to its changes.
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "7bc49843-1302-4e36-b901-63af5cea6c60"
+)]
 pub struct HotKeyEditor {
     widget: Widget,
     text: InheritableVariable<Handle<Text>>,
@@ -225,8 +225,6 @@ impl HotKeyEditor {
         ui.send(*self.text, TextMessage::Text(text));
     }
 }
-
-uuid_provider!(HotKeyEditor = "7bc49843-1302-4e36-b901-63af5cea6c60");
 
 impl Control for HotKeyEditor {
     fn draw(&self, drawing_context: &mut DrawingContext) {
@@ -333,6 +331,7 @@ impl HotKeyEditorBuilder {
 /// Key binding is a simplified version of [`HotKey`] that consists of a single physical key code. It is usually
 /// used for "unconditional" (independent of modifier keys state) triggering of some action.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Reflect, Visit, Default)]
+#[reflect(type_uuid = "c27da844-b57f-4e29-93b8-2426c981f7e4")]
 pub enum KeyBinding {
     /// Unset key binding. Does nothing.
     #[default]
@@ -399,8 +398,11 @@ impl MessageData for KeyBindingEditorMessage {}
 /// ## Messages
 ///
 /// Use [`KeyBindingEditorMessage`] message to alternate the state of a key binding widget, or to listen to its changes.
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "150113ce-f95e-4c76-9ac9-4503e78b960f"
+)]
 pub struct KeyBindingEditor {
     widget: Widget,
     text: InheritableVariable<Handle<Text>>,
@@ -436,8 +438,6 @@ impl KeyBindingEditor {
         );
     }
 }
-
-uuid_provider!(KeyBindingEditor = "150113ce-f95e-4c76-9ac9-4503e78b960f");
 
 impl Control for KeyBindingEditor {
     fn draw(&self, drawing_context: &mut DrawingContext) {

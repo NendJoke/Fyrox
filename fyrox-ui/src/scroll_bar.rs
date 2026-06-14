@@ -32,8 +32,7 @@ use crate::{
     button::{ButtonBuilder, ButtonMessage},
     canvas::CanvasBuilder,
     core::{
-        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        visitor::prelude::*,
+        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*, visitor::prelude::*,
     },
     decorator::DecoratorBuilder,
     font::FontResource,
@@ -46,7 +45,7 @@ use crate::{
     BuildContext, Control, HorizontalAlignment, Orientation, Thickness, UiNode, UserInterface,
     VerticalAlignment,
 };
-use fyrox_core::uuid_provider;
+
 use fyrox_core::variable::InheritableVariable;
 use fyrox_graph::constructor::{ConstructorProvider, GraphNodeConstructor};
 use fyrox_graph::SceneGraph;
@@ -130,8 +129,11 @@ impl MessageData for ScrollBarMessage {}
 ///
 /// Scroll bar provides arrows to change the current value using a fixed step value. You can change it using
 /// [`ScrollBarBuilder::with_step`] method.
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "92accc96-b334-424d-97ea-332c4787acf6"
+)]
 pub struct ScrollBar {
     /// Base widget of the scroll bar.
     pub widget: Widget,
@@ -177,8 +179,6 @@ impl ConstructorProvider<UiNode, UserInterface> for ScrollBar {
 }
 
 crate::define_widget_deref!(ScrollBar);
-
-uuid_provider!(ScrollBar = "92accc96-b334-424d-97ea-332c4787acf6");
 
 impl Control for ScrollBar {
     fn arrange_override(&self, ui: &UserInterface, final_size: Vector2<f32>) -> Vector2<f32> {

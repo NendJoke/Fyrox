@@ -20,7 +20,6 @@
 
 use crate::{
     core::{algebra::Vector2, pool::Handle, reflect::Reflect, uuid::Uuid, visitor::Visit},
-    core::{ComponentProvider, TypeUuidProvider},
     draw::DrawingContext,
     message::{OsEvent, UiMessage},
     widget::Widget,
@@ -29,6 +28,7 @@ use crate::{
 use fyrox_core::{define_as_any_trait, pool::ObjectOrVariantHelper};
 
 use fyrox_core::algebra::Matrix3;
+use fyrox_graph::NodeWrapper;
 use std::{
     any::Any,
     marker::PhantomData,
@@ -57,7 +57,7 @@ pub trait BaseControl: Send + ControlAsAny {
 
 impl<T> BaseControl for T
 where
-    T: Any + Clone + 'static + Control + TypeUuidProvider,
+    T: Any + Clone + 'static + Control,
 {
     fn clone_boxed(&self) -> Box<dyn Control> {
         Box::new(self.clone())
@@ -67,8 +67,9 @@ where
         std::any::type_name::<T>()
     }
 
+    // TODO: Remove this method, use `self.type_info_ref().type_uuid` instead.
     fn id(&self) -> Uuid {
-        Self::type_uuid()
+        <Self as Reflect>::type_info().type_uuid
     }
 
     fn self_size(&self) -> usize {
@@ -154,9 +155,7 @@ macro_rules! control_trait_proxy_impls {
 }
 
 /// Trait for all UI controls in library.
-pub trait Control:
-    BaseControl + Deref<Target = Widget> + DerefMut + Reflect + Visit + ComponentProvider
-{
+pub trait Control: BaseControl + Deref<Target = Widget> + DerefMut + Reflect + Visit {
     /// Brief debugging information about this node.
     fn summary(&self) -> String {
         use std::fmt::Write;
@@ -186,24 +185,23 @@ pub trait Control:
     /// ```rust
     /// # use fyrox_ui::{
     /// #     core::algebra::Vector2, define_widget_deref, message::UiMessage, Control, UserInterface,
-    /// #     core::{visitor::prelude::*, reflect::prelude::*, type_traits::prelude::*,},
+    /// #     core::{visitor::prelude::*, reflect::prelude::*, },
     /// #     widget::Widget, UiNode
     /// # };
     /// # use std::{
     /// #     any::{Any, TypeId},
     /// #     ops::{Deref, DerefMut},
     /// # };
-    /// # use fyrox_core::uuid_provider;
+    /// #
     /// # use fyrox_graph::SceneGraph;
     /// #
-    /// #[derive(Clone, Visit, Reflect, Debug, ComponentProvider)]
-    /// #[reflect(derived_type = "UiNode")]
+    /// #[derive(Clone, Visit, Reflect, Debug)]
+    /// #[reflect(derived_type = "UiNode", type_uuid = "a93ec1b5-e7c8-4919-ac19-687d8c99f6bd")]
     /// struct MyWidget {
     ///     widget: Widget,
     /// }
     /// #
     /// # define_widget_deref!(MyWidget);
-    /// # uuid_provider!(MyWidget = "a93ec1b5-e7c8-4919-ac19-687d8c99f6bd");
     /// impl Control for MyWidget {
     ///     fn measure_override(
     ///         &self,
@@ -256,7 +254,7 @@ pub trait Control:
     /// ```rust
     /// # use fyrox_ui::{
     /// #     core::{algebra::Vector2, math::Rect},
-    /// #     core::{visitor::prelude::*, reflect::prelude::*, type_traits::prelude::*,},
+    /// #     core::{visitor::prelude::*, reflect::prelude::*, },
     /// #     define_widget_deref,
     /// #     message::UiMessage,
     /// #     Control, UserInterface, widget::Widget, UiNode
@@ -265,16 +263,15 @@ pub trait Control:
     /// #     any::{Any, TypeId},
     /// #     ops::{Deref, DerefMut},
     /// # };
-    /// # use fyrox_core::uuid_provider;
     /// #
-    /// #[derive(Clone, Visit, Reflect, Debug, ComponentProvider)]
-    /// #[reflect(derived_type = "UiNode")]
+    /// #
+    /// #[derive(Clone, Visit, Reflect, Debug)]
+    /// #[reflect(derived_type = "UiNode", type_uuid = "a93ec1b5-e7c8-4919-ac19-687d8c99f6bd")]
     /// struct MyWidget {
     ///     widget: Widget,
     /// }
     /// #
     /// # define_widget_deref!(MyWidget);
-    /// # uuid_provider!(MyWidget = "a93ec1b5-e7c8-4919-ac19-687d8c99f6bd");
     /// impl Control for MyWidget {
     ///     fn arrange_override(&self, ui: &UserInterface, final_size: Vector2<f32>) -> Vector2<f32> {
     ///         let final_rect = Rect::new(0.0, 0.0, final_size.x, final_size.y);
@@ -315,7 +312,7 @@ pub trait Control:
     /// # use fyrox_ui::{
     /// #     define_widget_deref,
     /// #     draw::{CommandTexture, Draw, DrawingContext},
-    /// #     core::{visitor::prelude::*, reflect::prelude::*, type_traits::prelude::*,},
+    /// #     core::{visitor::prelude::*, reflect::prelude::*, },
     /// #     message::UiMessage,
     /// #     Control, UserInterface, widget::Widget, UiNode
     /// # };
@@ -323,16 +320,15 @@ pub trait Control:
     /// #     any::{Any, TypeId},
     /// #     ops::{Deref, DerefMut},
     /// # };
-    /// # use fyrox_core::uuid_provider;
     /// #
-    /// #[derive(Clone, Visit, Reflect, Debug, ComponentProvider)]
-    /// #[reflect(derived_type = "UiNode")]
+    /// #
+    /// #[derive(Clone, Visit, Reflect, Debug)]
+    /// #[reflect(derived_type = "UiNode", type_uuid = "a93ec1b5-e7c8-4919-ac19-687d8c99f6bd")]
     /// struct MyWidget {
     ///     widget: Widget,
     /// }
     /// #
     /// # define_widget_deref!(MyWidget);
-    /// # uuid_provider!(MyWidget = "a93ec1b5-e7c8-4919-ac19-687d8c99f6bd");
     /// impl Control for MyWidget {
     /// fn draw(&self, drawing_context: &mut DrawingContext) {
     ///     let bounds = self.widget.bounding_rect();
@@ -458,10 +454,10 @@ pub trait Control:
 // See ObjectOrVariantHelper for the cause of the indirection.
 impl<T: Control> ObjectOrVariantHelper<UiNode, T> for PhantomData<T> {
     fn convert_to_dest_type_helper(node: &UiNode) -> Option<&T> {
-        (node.0.deref() as &dyn ComponentProvider).component_ref()
+        node.inner_ref().self_or_field_ref()
     }
 
     fn convert_to_dest_type_helper_mut(node: &mut UiNode) -> Option<&mut T> {
-        (node.0.deref_mut() as &mut dyn ComponentProvider).component_mut()
+        node.inner_mut().self_or_field_mut()
     }
 }

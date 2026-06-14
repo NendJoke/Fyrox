@@ -29,7 +29,6 @@ use crate::{
         math::Rect,
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
         visitor::prelude::*,
     },
     define_widget_deref,
@@ -57,8 +56,8 @@ pub enum ColorGradientEditorMessage {
 }
 impl MessageData for ColorGradientEditorMessage {}
 
-#[derive(Default, Clone, Debug, Visit, Reflect, TypeUuidProvider, ComponentProvider)]
-#[type_uuid(id = "50d00eb7-f30b-4973-8a36-03d6b8f007ec")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "50d00eb7-f30b-4973-8a36-03d6b8f007ec")]
 #[reflect(derived_type = "UiNode")]
 pub struct ColorGradientField {
     widget: Widget,
@@ -183,8 +182,8 @@ impl ColorGradientFieldBuilder {
     }
 }
 
-#[derive(Default, Clone, Debug, Visit, Reflect, TypeUuidProvider, ComponentProvider)]
-#[type_uuid(id = "82843d8b-1972-46e6-897c-9619b74059cc")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "82843d8b-1972-46e6-897c-9619b74059cc")]
 #[reflect(derived_type = "UiNode")]
 pub struct ColorGradientEditor {
     widget: Widget,
@@ -272,7 +271,7 @@ impl Control for ColorGradientEditor {
                 for (handle, pt) in ui[self.points_canvas]
                     .children()
                     .iter()
-                    .map(|c| (*c, ui.node(*c).query_component::<ColorPoint>().unwrap()))
+                    .map(|c| (*c, ui.node(*c).self_or_field_ref::<ColorPoint>().unwrap()))
                 {
                     gradient.add_point(GradientPoint::new(
                         pt.location,
@@ -317,7 +316,7 @@ impl ColorGradientEditor {
             .children()
             .iter()
             .filter(|c| **c != exclude)
-            .map(|c| ui.node(*c).query_component::<ColorPoint>().unwrap())
+            .map(|c| ui.node(*c).self_or_field_ref::<ColorPoint>().unwrap())
         {
             gradient.add_point(GradientPoint::new(pt.location, pt.color()));
         }
@@ -470,8 +469,8 @@ pub enum ColorPointMessage {
 }
 impl MessageData for ColorPointMessage {}
 
-#[derive(Default, Clone, Debug, Visit, Reflect, TypeUuidProvider, ComponentProvider)]
-#[type_uuid(id = "a493a603-3451-4005-8c80-559707729e70")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "a493a603-3451-4005-8c80-559707729e70")]
 #[reflect(derived_type = "UiNode")]
 pub struct ColorPoint {
     pub widget: Widget,
@@ -603,8 +602,8 @@ impl ColorPointBuilder {
     }
 }
 
-#[derive(Clone, Visit, Reflect, Debug, TypeUuidProvider, ComponentProvider)]
-#[type_uuid(id = "2608955a-4095-4fd1-af71-99bcdf2600f0")]
+#[derive(Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(type_uuid = "2608955a-4095-4fd1-af71-99bcdf2600f0")]
 #[reflect(derived_type = "UiNode")]
 pub struct ColorPointsCanvas {
     widget: Widget,
@@ -616,7 +615,7 @@ impl Control for ColorPointsCanvas {
     fn arrange_override(&self, ui: &UserInterface, final_size: Vector2<f32>) -> Vector2<f32> {
         for &child in self.children() {
             let child_ref = ui.node(child);
-            if let Some(color_point) = child_ref.query_component::<ColorPoint>() {
+            if let Some(color_point) = child_ref.self_or_field_ref::<ColorPoint>() {
                 let x_pos = final_size.x * color_point.location - child_ref.desired_size().x * 0.5;
 
                 ui.arrange_node(

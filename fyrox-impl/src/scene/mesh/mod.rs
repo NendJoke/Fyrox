@@ -29,7 +29,6 @@ use crate::{
         parking_lot::Mutex,
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
         variable::InheritableVariable,
         visitor::prelude::*,
         SafeLock,
@@ -93,9 +92,8 @@ pub mod vertex;
     AsRefStr,
     EnumString,
     VariantNames,
-    TypeUuidProvider,
 )]
-#[type_uuid(id = "009bccb6-42e4-4dc6-bb26-6a8a70b3fab9")]
+#[reflect(type_uuid = "009bccb6-42e4-4dc6-bb26-6a8a70b3fab9")]
 #[repr(u32)]
 pub enum RenderPath {
     /// Deferred rendering has much better performance than Forward, but it does not support transparent
@@ -143,9 +141,8 @@ fn transform_vertex(mut vertex: VertexViewMut, world: &Matrix4<f32>) {
     AsRefStr,
     EnumString,
     VariantNames,
-    TypeUuidProvider,
 )]
-#[type_uuid(id = "745e6f32-63f5-46fe-8edb-9708699ae328")]
+#[reflect(type_uuid = "745e6f32-63f5-46fe-8edb-9708699ae328")]
 #[repr(u32)]
 pub enum BatchingMode {
     /// No batching. The mesh will be drawn in a separate draw call.
@@ -160,13 +157,13 @@ pub enum BatchingMode {
     Dynamic,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 struct Batch {
     data: SurfaceResource,
     material: MaterialResource,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, PartialEq, Clone)]
 struct BatchContainer {
     batches: FxHashMap<u64, Batch>,
 }
@@ -194,6 +191,12 @@ impl BatchContainer {
 
 #[derive(Debug, Default)]
 struct BatchContainerWrapper(Mutex<BatchContainer>);
+
+impl PartialEq for BatchContainerWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        *self.0.safe_lock() == *other.0.safe_lock()
+    }
+}
 
 impl Clone for BatchContainerWrapper {
     fn clone(&self) -> Self {
@@ -317,8 +320,11 @@ impl RenderDataBundleStorageTrait for BatchContainer {
 ///
 /// This example creates a unit cube surface with default material and then creates a mesh with this surface. If you need to create
 /// custom surface, see [`crate::scene::mesh::surface::SurfaceData`] docs for more info.
-#[derive(Debug, Reflect, Clone, Visit, ComponentProvider)]
-#[reflect(derived_type = "Node")]
+#[derive(Debug, PartialEq, Reflect, Clone, Visit)]
+#[reflect(
+    derived_type = "Node",
+    type_uuid = "caaf9d7b-bd74-48ce-b7cc-57e9dc65c2e6"
+)]
 pub struct Mesh {
     #[visit(rename = "Common")]
     base: Base,
@@ -398,12 +404,6 @@ impl Deref for Mesh {
 impl DerefMut for Mesh {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.base
-    }
-}
-
-impl TypeUuidProvider for Mesh {
-    fn type_uuid() -> Uuid {
-        uuid!("caaf9d7b-bd74-48ce-b7cc-57e9dc65c2e6")
     }
 }
 
@@ -661,7 +661,7 @@ impl NodeTrait for Mesh {
     }
 
     fn id(&self) -> Uuid {
-        Self::type_uuid()
+        <Self as Reflect>::type_info().type_uuid
     }
 
     fn on_global_transform_changed(

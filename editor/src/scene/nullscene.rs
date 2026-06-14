@@ -22,20 +22,19 @@
 //! there is no scene to control.
 
 use crate::command::CommandContext;
-use fyrox::core::ComponentProvider;
+use crate::fyrox::core::reflect::prelude::*;
 use fyrox::gui::file_browser::FileType;
 
 use super::*;
 
 /// The [`CommandContext`] that is used when the current scene is the
 /// null scene.
-#[derive(ComponentProvider)]
+#[derive(PartialEq, Reflect, Debug)]
+#[reflect(non_cloneable)]
+#[reflect(type_uuid = "09ba866d-db75-46fb-938b-b3cc583f4469")]
 pub struct NullSceneContext {
-    #[component(include)]
     pub selection: &'static mut Selection,
-    #[component(include)]
     pub message_sender: MessageSender,
-    #[component(include)]
     pub resource_manager: ResourceManager,
 }
 

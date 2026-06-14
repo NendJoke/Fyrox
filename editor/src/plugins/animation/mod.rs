@@ -24,13 +24,13 @@ use crate::{
         asset::manager::ResourceManager,
         core::{
             algebra::Vector2, color::Color, log::Log, math::curve::Curve, math::Rect,
-            pool::ErasedHandle, pool::Handle, reflect::Reflect, some_or_return, uuid, uuid::Uuid,
+            pool::ErasedHandle, pool::Handle, reflect::Reflect, some_or_return, uuid::Uuid,
             variable::InheritableVariable,
         },
         engine::ApplicationLoopController,
         fxhash::FxHashSet,
         generic_animation::{signal::AnimationSignal, AnimationContainer},
-        graph::{PrefabData, SceneGraph, SceneGraphNode},
+        graph::{NodeWrapper, PrefabData, SceneGraph},
         gui::{
             border::BorderBuilder,
             brush::Brush,
@@ -65,9 +65,10 @@ use crate::{
     ui_scene::UiScene,
     Editor, Message,
 };
+use fyrox::core::uuid::uuid;
 use fyrox::gui::UiNode;
 use fyrox::scene::node::Node;
-use std::any::{Any, TypeId};
+use std::any::Any;
 
 pub mod command;
 mod ruler;
@@ -137,8 +138,8 @@ fn fetch_selection<G, N>(
     editor_selection: &Selection,
 ) -> AnimationSelection<N>
 where
-    G: SceneGraph<Node = N>,
-    N: SceneGraphNode<SceneGraph = G>,
+    G: SceneGraph<NodeWrapper = N>,
+    N: NodeWrapper<SceneGraph = G>,
 {
     let mut sel = inner_fetch_selection(editor_selection);
     if animation_container_ref(graph, sel.animation_player).is_none() {
@@ -207,13 +208,16 @@ fn animation_container<G, N>(
     handle: Handle<N>,
 ) -> Option<&mut AnimationContainer<Handle<N>>>
 where
-    G: SceneGraph<Node = N>,
-    N: SceneGraphNode<SceneGraph = G>,
+    G: SceneGraph<NodeWrapper = N>,
+    N: NodeWrapper<SceneGraph = G>,
 {
     graph
         .try_get_node_mut(handle)
         .ok()
-        .and_then(|n| n.component_mut::<InheritableVariable<AnimationContainer<Handle<N>>>>())
+        .and_then(|n| {
+            n.inner_mut()
+                .self_or_field_mut::<InheritableVariable<AnimationContainer<Handle<N>>>>()
+        })
         .map(|v| v.get_value_mut_silent())
 }
 
@@ -222,18 +226,16 @@ fn animation_container_ref<G, N>(
     handle: Handle<N>,
 ) -> Option<&AnimationContainer<Handle<N>>>
 where
-    G: SceneGraph<Node = N>,
-    N: SceneGraphNode<SceneGraph = G>,
+    G: SceneGraph<NodeWrapper = N>,
+    N: NodeWrapper<SceneGraph = G>,
 {
     graph
         .try_get_node(handle)
         .ok()
         .and_then(|n| {
-            n.query_component_ref(TypeId::of::<
-                InheritableVariable<AnimationContainer<Handle<N>>>,
-            >())
+            n.inner_ref()
+                .first_field_ref::<InheritableVariable<AnimationContainer<Handle<N>>>>()
         })
-        .and_then(|a| a.downcast_ref::<InheritableVariable<AnimationContainer<Handle<N>>>>())
         .map(|v| v.get_value_ref())
 }
 
@@ -373,8 +375,8 @@ impl AnimationEditor {
         node_overrides: &mut FxHashSet<Handle<N>>,
     ) where
         P: PrefabData<Graph = G> + AnimationSource<Node = N, SceneGraph = G, Prefab = P>,
-        G: SceneGraph<Node = N, Prefab = P>,
-        N: SceneGraphNode<SceneGraph = G, ResourceData = P> + TransformProvider,
+        G: SceneGraph<NodeWrapper = N, Prefab = P>,
+        N: NodeWrapper<SceneGraph = G, ResourceData = P> + TransformProvider,
     {
         let selection = fetch_selection(self, graph, editor_selection);
 
@@ -487,7 +489,7 @@ impl AnimationEditor {
 
                     // HACK. This is unreliable to just use `bool` here. It should be wrapped into
                     // newtype or something.
-                    if let Some(auto_apply) = animation_player_node.component_mut::<bool>() {
+                    if let Some(auto_apply) = animation_player_node.self_or_field_mut::<bool>() {
                         *auto_apply = true;
                     } else {
                         Log::warn("No `auto_apply` component in animation player!")
@@ -618,8 +620,8 @@ impl AnimationEditor {
         ui: &UserInterface,
         node_overrides: &mut FxHashSet<Handle<N>>,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper,
     {
         assert!(self.preview_mode_data.is_none());
 
@@ -649,8 +651,8 @@ impl AnimationEditor {
         ui: &UserInterface,
         node_overrides: &mut FxHashSet<Handle<N>>,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode<SceneGraph = G>,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper<SceneGraph = G>,
     {
         self.toolbar.on_preview_mode_changed(ui, false);
 
@@ -672,8 +674,8 @@ impl AnimationEditor {
         ui: &UserInterface,
         node_overrides: &mut FxHashSet<Handle<N>>,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode<SceneGraph = G>,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper<SceneGraph = G>,
     {
         if self.preview_mode_data.is_some() {
             self.leave_preview_mode(graph, ui, node_overrides);
@@ -691,8 +693,8 @@ impl AnimationEditor {
         ui: &UserInterface,
         node_overrides: &mut FxHashSet<Handle<N>>,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode<SceneGraph = G>,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper<SceneGraph = G>,
     {
         // Leave preview mode before execution of any scene command.
         if let Message::DoCommand(_)
@@ -719,8 +721,8 @@ impl AnimationEditor {
 
     pub fn update<G, N>(&mut self, editor_selection: &Selection, ui: &UserInterface, graph: &G)
     where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode<SceneGraph = G>,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper<SceneGraph = G>,
     {
         let selection = fetch_selection(self, graph, editor_selection);
 
@@ -740,8 +742,8 @@ impl AnimationEditor {
         ui: &mut UserInterface,
         graph: &G,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode<SceneGraph = G>,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper<SceneGraph = G>,
     {
         let selection = fetch_selection(self, graph, editor_selection);
 

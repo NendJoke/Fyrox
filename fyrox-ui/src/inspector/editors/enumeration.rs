@@ -18,15 +18,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use crate::inspector::InspectorEnvironmentContainer;
 use crate::{
-    core::{
-        combine_uuids,
-        pool::Handle,
-        reflect::{prelude::*, Reflect},
-        uuid::{uuid, Uuid},
-        visitor::prelude::*,
-        ComponentProvider, TypeUuidProvider,
-    },
+    core::{pool::Handle, reflect::prelude::*, visitor::prelude::*},
     dropdown_list::{DropdownList, DropdownListBuilder, DropdownListMessage},
     inspector::{
         editors::{
@@ -35,8 +29,7 @@ use crate::{
             PropertyEditorMessageContext, PropertyEditorTranslationContext,
         },
         make_expander_container, FieldAction, Inspector, InspectorBuilder, InspectorContext,
-        InspectorContextArgs, InspectorEnvironment, InspectorError, InspectorMessage,
-        PropertyChanged, PropertyFilter,
+        InspectorContextArgs, InspectorError, InspectorMessage, PropertyChanged, PropertyFilter,
     },
     message::{MessageData, UiMessage},
     utils::make_dropdown_list_option,
@@ -55,9 +48,9 @@ use strum::VariantNames;
 
 const LOCAL_SYNC_FLAG: u64 = 0xFF;
 
-pub trait InspectableEnum: Debug + Reflect + Clone + TypeUuidProvider + Send + 'static {}
+pub trait InspectableEnum: Debug + Reflect + PartialEq + Clone + Send + 'static {}
 
-impl<T: Debug + Reflect + Clone + TypeUuidProvider + Send + 'static> InspectableEnum for T {}
+impl<T: Debug + Reflect + PartialEq + Clone + Send + 'static> InspectableEnum for T {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnumPropertyEditorMessage {
@@ -66,8 +59,11 @@ pub enum EnumPropertyEditorMessage {
 }
 impl MessageData for EnumPropertyEditorMessage {}
 
-#[derive(Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "0dbefddc-70fa-45a9-96f0-8fe25f6c1669"
+)]
 pub struct EnumPropertyEditor<T: InspectableEnum> {
     pub widget: Widget,
     pub variant_selector: Handle<UiNode>,
@@ -80,7 +76,7 @@ pub struct EnumPropertyEditor<T: InspectableEnum> {
     pub definition_container: Arc<PropertyEditorDefinitionContainer>,
     #[visit(skip)]
     #[reflect(hidden)]
-    pub environment: Option<Arc<dyn InspectorEnvironment>>,
+    pub environment: Option<InspectorEnvironmentContainer>,
     #[visit(skip)]
     #[reflect(hidden)]
     pub layer_index: usize,
@@ -140,18 +136,6 @@ impl<T: InspectableEnum> DerefMut for EnumPropertyEditor<T> {
     }
 }
 
-impl<T> TypeUuidProvider for EnumPropertyEditor<T>
-where
-    T: InspectableEnum,
-{
-    fn type_uuid() -> Uuid {
-        combine_uuids(
-            uuid!("0dbefddc-70fa-45a9-96f0-8fe25f6c1669"),
-            T::type_uuid(),
-        )
-    }
-}
-
 impl<T: InspectableEnum> Control for EnumPropertyEditor<T> {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
         self.widget.handle_routed_message(ui, message);
@@ -168,6 +152,7 @@ impl<T: InspectableEnum> Control for EnumPropertyEditor<T> {
                 generate_property_string_values: self.generate_property_string_values,
                 filter: self.filter.clone(),
                 name_column_width: self.name_column_width,
+                hide_name_column: false,
                 base_path: self.base_path.clone(),
                 has_parent_object: self.has_parent_object,
             });
@@ -198,7 +183,7 @@ impl<T: InspectableEnum> Control for EnumPropertyEditor<T> {
 pub struct EnumPropertyEditorBuilder {
     widget_builder: WidgetBuilder,
     definition_container: Option<Arc<PropertyEditorDefinitionContainer>>,
-    environment: Option<Arc<dyn InspectorEnvironment>>,
+    environment: Option<InspectorEnvironmentContainer>,
     variant_selector: Handle<UiNode>,
     layer_index: usize,
     generate_property_string_values: bool,
@@ -226,7 +211,7 @@ impl EnumPropertyEditorBuilder {
         self
     }
 
-    pub fn with_environment(mut self, environment: Option<Arc<dyn InspectorEnvironment>>) -> Self {
+    pub fn with_environment(mut self, environment: Option<InspectorEnvironmentContainer>) -> Self {
         self.environment = environment;
         self
     }
@@ -276,6 +261,7 @@ impl EnumPropertyEditorBuilder {
             generate_property_string_values: self.generate_property_string_values,
             filter: self.filter.clone(),
             name_column_width,
+            hide_name_column: false,
             base_path: base_path.clone(),
             has_parent_object,
         });
@@ -307,6 +293,8 @@ impl EnumPropertyEditorBuilder {
     }
 }
 
+#[derive(PartialEq)]
+#[allow(unpredictable_function_pointer_comparisons)]
 pub struct EnumPropertyEditorDefinition<T: InspectableEnum> {
     pub variant_generator: fn(usize) -> T,
     pub index_generator: fn(&T) -> usize,
@@ -423,6 +411,7 @@ where
                 editor
             },
             ctx.name_column_width,
+            ctx.hide_name_column,
             ctx.build_context,
         );
 
@@ -471,6 +460,7 @@ where
                 generate_property_string_values: ctx.generate_property_string_values,
                 filter: ctx.filter,
                 name_column_width: ctx.name_column_width,
+                hide_name_column: false,
                 base_path: ctx.base_path.clone(),
                 has_parent_object: ctx.has_parent_object,
             });

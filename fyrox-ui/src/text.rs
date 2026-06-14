@@ -26,8 +26,7 @@
 use crate::{
     brush::Brush,
     core::{
-        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        uuid_provider, visitor::prelude::*,
+        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*, visitor::prelude::*,
     },
     draw::DrawingContext,
     font::FontResource,
@@ -36,6 +35,7 @@ use crate::{
     style::{resource::StyleResourceExt, Style, StyledProperty},
     widget::{Widget, WidgetBuilder},
     BBCode, BuildContext, Control, HorizontalAlignment, UiNode, UserInterface, VerticalAlignment,
+    WidgetMessage,
 };
 use fyrox_core::algebra::Matrix3;
 use fyrox_core::variable::InheritableVariable;
@@ -319,8 +319,11 @@ impl MessageData for TextMessage {}
 ///
 /// Please keep in mind, that like any other situation when you "changing" something via messages, you should remember
 /// that the change is **not** immediate.
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "22f7f502-7622-4ecb-8c5f-ba436e7ee823"
+)]
 pub struct Text {
     /// Base widget of the Text widget.
     pub widget: Widget,
@@ -354,8 +357,6 @@ impl ConstructorProvider<UiNode, UserInterface> for Text {
 }
 
 crate::define_widget_deref!(Text);
-
-uuid_provider!(Text = "22f7f502-7622-4ecb-8c5f-ba436e7ee823");
 
 impl Control for Text {
     fn measure_override(&self, _: &UserInterface, available_size: Vector2<f32>) -> Vector2<f32> {
@@ -401,7 +402,12 @@ impl Control for Text {
         self.widget.handle_routed_message(ui, message);
 
         if message.destination() == self.handle() {
-            if let Some(msg) = message.data::<TextMessage>() {
+            if let Some(msg) = message.data::<WidgetMessage>() {
+                if let WidgetMessage::Style(style) = msg {
+                    self.formatted_text.borrow_mut().set_style(style);
+                    self.invalidate_layout();
+                }
+            } else if let Some(msg) = message.data::<TextMessage>() {
                 let mut text_ref = self.formatted_text.borrow_mut();
                 match msg {
                     TextMessage::BBCode(text) => {

@@ -21,8 +21,7 @@
 //! A module that handles resource states.
 
 use crate::{core::reflect::prelude::*, ResourceData, ResourceLoadError, TypedResourceData};
-use fyrox_core::reflect::ReflectHandle;
-use std::any::{Any, TypeId};
+use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::path::PathBuf;
 use std::{
@@ -33,8 +32,14 @@ use std::{
 
 #[doc(hidden)]
 #[derive(Reflect, Debug, Default, Clone)]
-#[reflect(hide_all)]
+#[reflect(hide_all, type_uuid = "238a5490-6627-48ef-8035-4b589497293b")]
 pub struct WakersList(Vec<Waker>);
+
+impl PartialEq for WakersList {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len()
+    }
+}
 
 impl Deref for WakersList {
     type Target = Vec<Waker>;
@@ -62,8 +67,18 @@ impl DerefMut for WakersList {
 
 /// Arbitrary loading error, that could be optionally be empty.
 #[derive(Reflect, Debug, Clone, Default)]
-#[reflect(hide_all)]
+#[reflect(hide_all, type_uuid = "cb2257dc-b344-49e6-972e-cd99be4c3615")]
 pub struct LoadError(pub Option<Arc<dyn ResourceLoadError>>);
+
+impl PartialEq for LoadError {
+    fn eq(&self, other: &Self) -> bool {
+        if let (Some(a), Some(b)) = (&self.0, &other.0) {
+            Arc::ptr_eq(a, b)
+        } else {
+            false
+        }
+    }
+}
 
 impl std::error::Error for LoadError {}
 
@@ -84,158 +99,27 @@ impl Display for LoadError {
 }
 
 #[doc(hidden)]
-#[derive(Debug)]
-pub struct ResourceDataWrapper(pub Box<dyn ResourceData>);
+#[derive(Debug, Reflect)]
+#[reflect(type_uuid = "e7675337-0b9b-49b4-962a-03cc571a0ab7")]
+pub struct ResourceDataWrapper(
+    #[reflect(deref, display_name = "Resource Data")] pub Box<dyn ResourceData>,
+);
 
-impl Reflect for ResourceDataWrapper {
-    fn source_path() -> &'static str
-    where
-        Self: Sized,
-    {
-        file!()
-    }
-
-    fn derived_types() -> &'static [TypeId]
-    where
-        Self: Sized,
-    {
-        &[]
-    }
-
-    fn try_clone_box(&self) -> Option<Box<dyn Reflect>> {
-        Reflect::try_clone_box(&*self.0)
-    }
-
-    fn query_derived_types(&self) -> &'static [TypeId] {
-        self.deref().query_derived_types()
-    }
-
-    fn type_name(&self) -> &'static str {
-        self.deref().type_name()
-    }
-
-    fn doc(&self) -> &'static str {
-        self.deref().doc()
-    }
-
-    fn fields_ref(&self, func: &mut dyn FnMut(&[FieldRef])) {
-        self.deref().fields_ref(func)
-    }
-
-    fn fields_mut(&mut self, func: &mut dyn FnMut(&mut [FieldMut])) {
-        self.deref_mut().fields_mut(func)
-    }
-
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-
-    fn as_any(&self, func: &mut dyn FnMut(&dyn Any)) {
-        self.deref().as_any(func)
-    }
-
-    fn as_any_mut(&mut self, func: &mut dyn FnMut(&mut dyn Any)) {
-        self.deref_mut().as_any_mut(func)
-    }
-
-    fn as_reflect(&self, func: &mut dyn FnMut(&dyn Reflect)) {
-        self.deref().as_reflect(func)
-    }
-
-    fn as_reflect_mut(&mut self, func: &mut dyn FnMut(&mut dyn Reflect)) {
-        self.deref_mut().as_reflect_mut(func)
-    }
-
-    fn set(&mut self, value: Box<dyn Reflect>) -> Result<Box<dyn Reflect>, Box<dyn Reflect>> {
-        self.deref_mut().set(value)
-    }
-
-    fn assembly_name(&self) -> &'static str {
-        env!("CARGO_PKG_NAME")
-    }
-
-    fn type_assembly_name() -> &'static str
-    where
-        Self: Sized,
-    {
-        env!("CARGO_PKG_NAME")
-    }
-
-    fn set_field(
-        &mut self,
-        field: &str,
-        value: Box<dyn Reflect>,
-        func: &mut dyn FnMut(Result<Box<dyn Reflect>, SetFieldError>),
-    ) {
-        self.deref_mut().set_field(field, value, func)
-    }
-
-    fn field(&self, name: &str, func: &mut dyn FnMut(Option<&dyn Reflect>)) {
-        self.deref().field(name, func)
-    }
-
-    fn field_mut(&mut self, name: &str, func: &mut dyn FnMut(Option<&mut dyn Reflect>)) {
-        self.deref_mut().field_mut(name, func)
-    }
-
-    fn as_array(&self, func: &mut dyn FnMut(Option<&dyn ReflectArray>)) {
-        self.deref().as_array(func)
-    }
-
-    fn as_array_mut(&mut self, func: &mut dyn FnMut(Option<&mut dyn ReflectArray>)) {
-        self.deref_mut().as_array_mut(func)
-    }
-
-    fn as_list(&self, func: &mut dyn FnMut(Option<&dyn ReflectList>)) {
-        self.deref().as_list(func)
-    }
-
-    fn as_list_mut(&mut self, func: &mut dyn FnMut(Option<&mut dyn ReflectList>)) {
-        self.deref_mut().as_list_mut(func)
-    }
-
-    fn as_inheritable_variable(
-        &self,
-        func: &mut dyn FnMut(Option<&dyn ReflectInheritableVariable>),
-    ) {
-        self.deref().as_inheritable_variable(func)
-    }
-
-    fn as_inheritable_variable_mut(
-        &mut self,
-        func: &mut dyn FnMut(Option<&mut dyn ReflectInheritableVariable>),
-    ) {
-        self.deref_mut().as_inheritable_variable_mut(func)
-    }
-
-    fn as_hash_map(&self, func: &mut dyn FnMut(Option<&dyn ReflectHashMap>)) {
-        self.deref().as_hash_map(func)
-    }
-
-    fn as_hash_map_mut(&mut self, func: &mut dyn FnMut(Option<&mut dyn ReflectHashMap>)) {
-        self.deref_mut().as_hash_map_mut(func)
-    }
-
-    fn as_handle(&self, func: &mut dyn FnMut(Option<&dyn ReflectHandle>)) {
-        self.deref().as_handle(func)
-    }
-
-    fn as_handle_mut(&mut self, func: &mut dyn FnMut(Option<&mut dyn ReflectHandle>)) {
-        self.deref_mut().as_handle_mut(func)
-    }
-}
-
-impl Deref for ResourceDataWrapper {
-    type Target = dyn ResourceData;
-
-    fn deref(&self) -> &Self::Target {
+impl ResourceDataWrapper {
+    pub fn inner_ref(&self) -> &dyn ResourceData {
         &*self.0
     }
+
+    pub fn inner_mut(&mut self) -> &mut dyn ResourceData {
+        &mut *self.0
+    }
 }
 
-impl DerefMut for ResourceDataWrapper {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.0
+impl PartialEq for ResourceDataWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        self.0
+            .try_compare(other.0.deref() as &dyn Reflect)
+            .unwrap_or_default()
     }
 }
 
@@ -271,7 +155,8 @@ impl Clone for ResourceDataWrapper {
 /// to get the UUID earlier: the UUID is stored in a metadata file which exists only if the resource
 /// is present. It is somewhat possible to get a UUID when a resource is failed to load, but not in
 /// 100% cases.
-#[derive(Clone, Reflect)]
+#[derive(Clone, PartialEq, Reflect)]
+#[reflect(type_uuid = "3d49c715-4a48-4b41-b8c6-45bcb8b3fd17")]
 pub enum ResourceState {
     /// Resource is not loaded. In some situations, having a handle to a resource
     /// can be sufficient even without the resource's data.
@@ -450,7 +335,7 @@ impl ResourceState {
             ResourceState::Pending { .. }
             | ResourceState::LoadError { .. }
             | ResourceState::Unloaded => None,
-            ResourceState::Ok { data, .. } => (&**data as &dyn Any).downcast_ref::<T>(),
+            ResourceState::Ok { data, .. } => (data.inner_ref() as &dyn Any).downcast_ref::<T>(),
         }
     }
 
@@ -461,32 +346,26 @@ impl ResourceState {
             ResourceState::Pending { .. }
             | ResourceState::LoadError { .. }
             | ResourceState::Unloaded => None,
-            ResourceState::Ok { data, .. } => (&mut **data as &mut dyn Any).downcast_mut::<T>(),
+            ResourceState::Ok { data, .. } => {
+                (data.inner_mut() as &mut dyn Any).downcast_mut::<T>()
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use fyrox_core::{
-        reflect::{FieldRef, Reflect},
-        uuid::Uuid,
-        visitor::prelude::*,
-        TypeUuidProvider,
-    };
+    use fyrox_core::{reflect::prelude::*, visitor::prelude::*};
     use std::error::Error;
     use std::path::Path;
 
     use super::*;
 
-    #[derive(Debug, Default, Clone, Reflect, Visit)]
+    #[derive(Debug, Default, Clone, Reflect, PartialEq, Visit)]
+    #[reflect(type_uuid = "96a59120-b174-4b2c-9069-1770ec495011")]
     struct Stub {}
 
     impl ResourceData for Stub {
-        fn type_uuid(&self) -> Uuid {
-            Uuid::default()
-        }
-
         fn save(&mut self, _path: &Path) -> Result<(), Box<dyn Error>> {
             Err("Saving is not supported!".to_string().into())
         }
@@ -497,12 +376,6 @@ mod test {
 
         fn try_clone_box(&self) -> Option<Box<dyn ResourceData>> {
             Some(Box::new(self.clone()))
-        }
-    }
-
-    impl TypeUuidProvider for Stub {
-        fn type_uuid() -> Uuid {
-            Uuid::default()
         }
     }
 

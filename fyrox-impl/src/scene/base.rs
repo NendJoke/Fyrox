@@ -30,7 +30,6 @@ use crate::{
         math::{aabb::AxisAlignedBoundingBox, Matrix4Ext},
         pool::{ErasedHandle, Handle},
         reflect::prelude::*,
-        type_traits::prelude::*,
         variable::InheritableVariable,
         visitor::{Visit, VisitResult, Visitor},
         ImmutableString,
@@ -46,7 +45,6 @@ use fyrox_core::pool::ObjectOrVariant;
 use fyrox_core::visitor::error::VisitError;
 use serde::{Deserialize, Serialize};
 use std::{
-    any::Any,
     cell::Cell,
     ops::{Deref, DerefMut},
     sync::mpsc::Sender,
@@ -58,8 +56,8 @@ use strum_macros::{AsRefStr, EnumString, VariantNames};
 /// Normalized distance is a distance in (0; 1) range where 0 - closest to camera,
 /// 1 - farthest. Real distance can be obtained by multiplying normalized distance
 /// with z_far of current projection matrix.
-#[derive(Debug, Default, Clone, Visit, Reflect, PartialEq, TypeUuidProvider)]
-#[type_uuid(id = "576b31a2-2b39-4c79-95dd-26aeaf381d8b")]
+#[derive(Debug, Default, Clone, Visit, Reflect, PartialEq)]
+#[reflect(type_uuid = "576b31a2-2b39-4c79-95dd-26aeaf381d8b")]
 pub struct LevelOfDetail {
     /// Beginning of the range in which the level will be visible. It is expressed in normalized
     /// coordinates: where 0.0 - closest to camera, 1.0 - farthest from camera.
@@ -126,18 +124,16 @@ impl LevelOfDetail {
 /// Lod group must contain non-overlapping cascades, each cascade with its own set of objects
 /// that belongs to level of detail. Engine does not care if you create overlapping cascades,
 /// it is your responsibility to create non-overlapping cascades.
-#[derive(Debug, Default, Clone, Visit, Reflect, PartialEq, TypeUuidProvider)]
-#[type_uuid(id = "8e7b18b1-c1e0-47d7-b952-4394c1d049e5")]
+#[derive(Debug, Default, Clone, Visit, Reflect, PartialEq)]
+#[reflect(type_uuid = "8e7b18b1-c1e0-47d7-b952-4394c1d049e5")]
 pub struct LodGroup {
     /// Set of cascades.
     pub levels: Vec<LevelOfDetail>,
 }
 
 /// A property value.
-#[derive(
-    Debug, Visit, Reflect, PartialEq, Clone, AsRefStr, EnumString, VariantNames, TypeUuidProvider,
-)]
-#[type_uuid(id = "cce94b60-a57e-48ba-b6f4-e5e84788f7f8")]
+#[derive(Debug, Visit, Reflect, PartialEq, Clone, AsRefStr, EnumString, VariantNames)]
+#[reflect(type_uuid = "cce94b60-a57e-48ba-b6f4-e5e84788f7f8")]
 pub enum PropertyValue {
     /// A node handle.
     ///
@@ -184,8 +180,8 @@ impl Default for PropertyValue {
 }
 
 /// A custom property.
-#[derive(Debug, Visit, Reflect, Default, Clone, PartialEq, TypeUuidProvider)]
-#[type_uuid(id = "fc87fd21-a5e6-40d5-a79d-19f96b25d6c9")]
+#[derive(Debug, Visit, Reflect, Default, Clone, PartialEq)]
+#[reflect(type_uuid = "fc87fd21-a5e6-40d5-a79d-19f96b25d6c9")]
 pub struct Property {
     /// Name of the property.
     pub name: String,
@@ -231,6 +227,7 @@ pub enum NodeScriptMessage {
     Deserialize,
 )]
 #[repr(transparent)]
+#[reflect(type_uuid = "6cebe796-6e14-479d-93a6-9fb04665740c")]
 pub struct SceneNodeId(pub Uuid);
 
 impl Visit for SceneNodeId {
@@ -240,8 +237,8 @@ impl Visit for SceneNodeId {
 }
 
 /// A script container record.
-#[derive(Clone, Reflect, Debug, Default, TypeUuidProvider)]
-#[type_uuid(id = "51bc577b-5a50-4a97-9b31-eda2f3d46c9d")]
+#[derive(Clone, Reflect, Debug, PartialEq, Default)]
+#[reflect(type_uuid = "51bc577b-5a50-4a97-9b31-eda2f3d46c9d")]
 pub struct ScriptRecord {
     // Script is wrapped into `Option` to be able to do take-return trick to bypass borrow checker
     // issues.
@@ -329,6 +326,12 @@ impl<T: Visit> Visit for TrackedProperty<T> {
     }
 }
 
+impl<T: PartialEq> PartialEq for TrackedProperty<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.property == other.property
+    }
+}
+
 impl<T> Deref for TrackedProperty<T> {
     type Target = T;
 
@@ -346,6 +349,18 @@ impl<T> DerefMut for TrackedProperty<T> {
             }))
         }
         &mut self.property
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MessageSenders {
+    script_message_sender: Sender<NodeScriptMessage>,
+    message_sender: Sender<NodeMessage>,
+}
+
+impl PartialEq for MessageSenders {
+    fn eq(&self, _other: &Self) -> bool {
+        true
     }
 }
 
@@ -369,16 +384,14 @@ impl<T> DerefMut for TrackedProperty<T> {
 ///         .build(graph)
 /// }
 /// ```
-#[derive(Debug, Reflect, Clone)]
+#[derive(Debug, Reflect, PartialEq, Clone)]
+#[reflect(type_uuid = "5bf7fb77-fd50-4b92-83d7-27153b7da531")]
 pub struct Base {
     #[reflect(hidden)]
     self_handle: Handle<Node>,
 
     #[reflect(hidden)]
-    script_message_sender: Option<Sender<NodeScriptMessage>>,
-
-    #[reflect(hidden)]
-    message_sender: Option<Sender<NodeMessage>>,
+    senders: Option<MessageSenders>,
 
     // Name is not inheritable, because property inheritance works bad with external 3D models.
     // They use names to search "original" nodes.
@@ -511,8 +524,10 @@ impl Base {
         script_message_sender: Sender<NodeScriptMessage>,
     ) {
         self.self_handle = self_handle;
-        self.message_sender = Some(message_sender.clone());
-        self.script_message_sender = Some(script_message_sender);
+        self.senders = Some(MessageSenders {
+            message_sender: message_sender.clone(),
+            script_message_sender,
+        });
         self.local_transform
             .set_message_data(message_sender.clone(), self_handle);
         self.visibility
@@ -525,10 +540,10 @@ impl Base {
     }
 
     fn notify(&self, node: Handle<Node>, kind: NodeMessageKind) {
-        let Some(sender) = self.message_sender.as_ref() else {
+        let Some(senders) = self.senders.as_ref() else {
             return;
         };
-        Log::verify(sender.send(NodeMessage::new(node, kind)));
+        Log::verify(senders.message_sender.send(NodeMessage::new(node, kind)));
     }
 
     /// Returns shared reference to local transform of a node, can be used to fetch
@@ -868,12 +883,14 @@ impl Base {
             // We might be in a middle of a script method execution, where script is temporarily
             // extracted from the array.
             if let Some(script) = entry.take() {
-                if let Some(sender) = self.script_message_sender.as_ref() {
-                    Log::verify(sender.send(NodeScriptMessage::DestroyScript {
-                        script,
-                        handle: self.self_handle,
-                        script_index: index,
-                    }));
+                if let Some(senders) = self.senders.as_ref() {
+                    Log::verify(senders.script_message_sender.send(
+                        NodeScriptMessage::DestroyScript {
+                            script,
+                            handle: self.self_handle,
+                            script_index: index,
+                        },
+                    ));
                 } else {
                     Log::warn(format!(
                         "There is a script instance on a node {}, but no message sender. \
@@ -903,12 +920,14 @@ impl Base {
 
         if let Some(entry) = self.scripts.get_mut(index) {
             entry.script = script;
-            if let Some(sender) = self.script_message_sender.as_ref() {
+            if let Some(senders) = self.senders.as_ref() {
                 if entry.script.is_some() {
-                    Log::verify(sender.send(NodeScriptMessage::InitializeScript {
-                        handle: self.self_handle,
-                        script_index: index,
-                    }));
+                    Log::verify(senders.script_message_sender.send(
+                        NodeScriptMessage::InitializeScript {
+                            handle: self.self_handle,
+                            script_index: index,
+                        },
+                    ));
                 }
             }
         }
@@ -924,11 +943,15 @@ impl Base {
     {
         let script_index = self.scripts.len();
         self.scripts.push(ScriptRecord::new(Script::new(script)));
-        if let Some(sender) = self.script_message_sender.as_ref() {
-            Log::verify(sender.send(NodeScriptMessage::InitializeScript {
-                handle: self.self_handle,
-                script_index,
-            }));
+        if let Some(senders) = self.senders.as_ref() {
+            Log::verify(
+                senders
+                    .script_message_sender
+                    .send(NodeScriptMessage::InitializeScript {
+                        handle: self.self_handle,
+                        script_index,
+                    }),
+            );
         }
     }
 
@@ -994,30 +1017,30 @@ impl Base {
             .filter_map(|e| e.script.as_mut().and_then(|s| s.cast_mut::<T>()))
     }
 
-    /// Tries find a component of the given type `C` across **all** available scripts of the node.
-    /// If you want to search a component `C` in a particular script, then use [`Self::try_get_script`]
-    /// and then search for component in it.
+    /// Tries find a field of the given type `C` across **all** available scripts of the node.
+    /// If you want to search a field `C` in a particular script, then use [`Self::try_get_script`]
+    /// and then search for field in it.
     #[inline]
-    pub fn try_get_script_component<C>(&self) -> Option<&C>
+    pub fn try_get_script_field<C>(&self) -> Option<&C>
     where
-        C: Any,
+        C: Reflect,
     {
         self.scripts
             .iter()
-            .find_map(|s| s.as_ref().and_then(|s| s.query_component_ref::<C>()))
+            .find_map(|s| s.as_ref().and_then(|s| s.self_or_field_ref::<C>()))
     }
 
-    /// Tries find a component of the given type `C` across **all** available scripts of the node.
-    /// If you want to search a component `C` in a particular script, then use [`Self::try_get_script`]
-    /// and then search for component in it.
+    /// Tries find a field of the given type `C` across **all** available scripts of the node.
+    /// If you want to search a field `C` in a particular script, then use [`Self::try_get_script`]
+    /// and then search for field in it.
     #[inline]
-    pub fn try_get_script_component_mut<C>(&mut self) -> Option<&mut C>
+    pub fn try_get_script_field_mut<C>(&mut self) -> Option<&mut C>
     where
-        C: Any,
+        C: Reflect,
     {
         self.scripts
             .iter_mut()
-            .find_map(|s| s.as_mut().and_then(|s| s.query_component_mut::<C>()))
+            .find_map(|s| s.as_mut().and_then(|s| s.self_or_field_mut::<C>()))
     }
 
     /// Returns total count of scripts assigned to the node.
@@ -1346,8 +1369,7 @@ impl BaseBuilder {
     pub fn build_base(self) -> Base {
         Base {
             self_handle: Default::default(),
-            script_message_sender: None,
-            message_sender: None,
+            senders: None,
             name: self.name.into(),
             children: self.children,
             local_transform: TrackedProperty::unbound(

@@ -26,7 +26,7 @@ use crate::{
     brush::Brush,
     core::{
         algebra::Vector2, color::Color, math::Rect, pool::Handle, reflect::prelude::*,
-        type_traits::prelude::*, visitor::prelude::*,
+        visitor::prelude::*,
     },
     draw::{CommandTexture, Draw, DrawingContext},
     message::UiMessage,
@@ -35,7 +35,7 @@ use crate::{
 };
 
 use crate::message::MessageData;
-use fyrox_core::{ok_or_return, uuid_provider};
+use fyrox_core::ok_or_return;
 use fyrox_graph::constructor::{ConstructorProvider, GraphNodeConstructor};
 use fyrox_graph::SceneGraph;
 
@@ -143,8 +143,11 @@ impl MessageData for ScrollPanelMessage {
 ///     ui.send(scroll_panel, ScrollPanelMessage::BringIntoView(child))
 /// }
 /// ```
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "1ab4936d-58c8-4cf7-b33c-4b56092f4826"
+)]
 pub struct ScrollPanel {
     /// Base widget of the scroll panel.
     pub widget: Widget,
@@ -170,8 +173,6 @@ impl ConstructorProvider<UiNode, UserInterface> for ScrollPanel {
 }
 
 crate::define_widget_deref!(ScrollPanel);
-
-uuid_provider!(ScrollPanel = "1ab4936d-58c8-4cf7-b33c-4b56092f4826");
 
 impl ScrollPanel {
     fn children_size(&self, ui: &UserInterface) -> Vector2<f32> {

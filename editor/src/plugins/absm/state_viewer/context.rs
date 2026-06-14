@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use crate::fyrox::graph::SceneGraphNode;
+use crate::fyrox::graph::NodeWrapper;
 use crate::fyrox::{
     core::{algebra::Vector2, pool::Handle},
     generic_animation::machine::{
@@ -54,7 +54,7 @@ use crate::{
     message::MessageSender,
     scene::{commands::ChangeSelectionCommand, Selection},
 };
-use fyrox::core::{uuid, Uuid};
+use fyrox::core::uuid::{uuid, Uuid};
 use fyrox::gui::menu::{ContextMenuBuilder, MenuItem};
 
 pub struct CanvasContextMenu {
@@ -138,7 +138,7 @@ impl CanvasContextMenu {
         }
     }
 
-    pub fn handle_ui_message<N: SceneGraphNode>(
+    pub fn handle_ui_message<N: NodeWrapper>(
         &mut self,
         sender: &MessageSender,
         message: &UiMessage,
@@ -267,7 +267,7 @@ impl NodeContextMenu {
         }
     }
 
-    pub fn handle_ui_message<N: SceneGraphNode>(
+    pub fn handle_ui_message<N: NodeWrapper>(
         &mut self,
         message: &UiMessage,
         machine_layer: &MachineLayer<Handle<N>>,
@@ -304,7 +304,7 @@ impl NodeContextMenu {
             } else if message.destination() == self.set_as_root {
                 let root = ui
                     .node(self.placement_target)
-                    .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                    .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                     .unwrap()
                     .model_handle;
 
@@ -360,7 +360,7 @@ impl ConnectionContextMenu {
         }
     }
 
-    pub fn handle_ui_message<N: SceneGraphNode>(
+    pub fn handle_ui_message<N: NodeWrapper>(
         &mut self,
         message: &UiMessage,
         ui: &mut UserInterface,
@@ -373,12 +373,12 @@ impl ConnectionContextMenu {
             if message.destination == self.remove {
                 let connection_ref = ui
                     .node(self.placement_target)
-                    .query_component::<Connection>()
+                    .self_or_field_ref::<Connection>()
                     .unwrap();
 
                 let dest_node_ref = ui
                     .node(connection_ref.dest_node)
-                    .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                    .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                     .unwrap();
 
                 let index = dest_node_ref

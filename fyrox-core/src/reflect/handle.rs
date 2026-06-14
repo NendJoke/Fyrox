@@ -18,33 +18,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//! `Reflect` implementations for external types othern than `std` types
+use crate::pool::ErasedHandle;
+use crate::reflect::Reflect;
+use std::any::TypeId;
 
-use fyrox_core_derive::impl_reflect;
-use nalgebra::*;
-use std::fmt::Debug;
-
-use crate::reflect::prelude::*;
-
-impl_reflect! {
-    pub struct Matrix<T: Copy + 'static, R: Dim + 'static, C: Dim + 'static, S: Copy + Debug + FieldValue + 'static> {
-        pub data: S,
-        // _phantoms: PhantomData<(T, R, C)>,
-    }
-}
-
-impl_reflect! {
-    pub struct ArrayStorage<T: Copy + Debug + Reflect, const R: usize, const C: usize>(pub [[T; R]; C]);
-}
-
-impl_reflect! {
-    pub struct Unit<T: Copy + Debug + 'static> {
-        // pub(crate) value: T,
-    }
-}
-
-impl_reflect! {
-    pub struct Quaternion<T: Copy + Debug + Reflect> {
-        pub coords: Vector4<T>,
-    }
+pub trait ReflectHandle: Reflect {
+    fn reflect_inner_type_id(&self) -> TypeId;
+    fn reflect_inner_type_name(&self) -> &'static str;
+    fn reflect_is_some(&self) -> bool;
+    fn reflect_set_index(&mut self, index: u32);
+    fn reflect_index(&self) -> u32;
+    fn reflect_set_generation(&mut self, generation: u32);
+    fn reflect_generation(&self) -> u32;
+    fn reflect_as_erased(&self) -> ErasedHandle;
 }

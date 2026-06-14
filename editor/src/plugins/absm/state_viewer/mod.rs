@@ -21,7 +21,7 @@
 use crate::command::{Command, CommandGroup};
 use crate::fyrox::generic_animation::machine::Machine;
 use crate::fyrox::generic_animation::AnimationContainer;
-use crate::fyrox::graph::{PrefabData, SceneGraphNode};
+use crate::fyrox::graph::{NodeWrapper, PrefabData};
 use crate::fyrox::{
     core::pool::{ErasedHandle, Handle},
     generic_animation::{
@@ -108,7 +108,7 @@ fn fetch_pose_node_model_handle<N: Reflect>(
     ui: &UserInterface,
 ) -> Handle<PoseNode<Handle<N>>> {
     ui.node(handle)
-        .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+        .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
         .unwrap()
         .model_handle
 }
@@ -118,7 +118,7 @@ fn fetch_socket_pose_node_model_handle<N: Reflect>(
     ui: &UserInterface,
 ) -> Handle<PoseNode<Handle<N>>> {
     ui.node(handle)
-        .query_component::<Socket>()
+        .self_or_field_ref::<Socket>()
         .unwrap()
         .parent_node
         .into()
@@ -130,8 +130,8 @@ fn make_play_animation_name<P, G, N>(
 ) -> String
 where
     P: PrefabData<Graph = G>,
-    G: SceneGraph<Node = N, Prefab = P>,
-    N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+    G: SceneGraph<NodeWrapper = N, Prefab = P>,
+    N: NodeWrapper<SceneGraph = G, ResourceData = P>,
 {
     if let Some(animation) =
         animation_container.and_then(|container| container.try_get(animation).ok())
@@ -148,8 +148,8 @@ fn make_pose_node_name<P, G, N>(
 ) -> String
 where
     P: PrefabData<Graph = G>,
-    G: SceneGraph<Node = N, Prefab = P>,
-    N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+    G: SceneGraph<NodeWrapper = N, Prefab = P>,
+    N: NodeWrapper<SceneGraph = G, ResourceData = P>,
 {
     match model_ref {
         PoseNode::PlayAnimation(play_animation) => {
@@ -216,8 +216,8 @@ impl StateViewer {
         ui: &UserInterface,
     ) where
         P: PrefabData<Graph = G>,
-        G: SceneGraph<Node = N, Prefab = P>,
-        N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+        G: SceneGraph<NodeWrapper = N, Prefab = P>,
+        N: NodeWrapper<SceneGraph = G, ResourceData = P>,
     {
         assert!(state.is_some());
 
@@ -280,8 +280,8 @@ impl StateViewer {
         editor_selection: &Selection,
     ) where
         P: PrefabData<Graph = G>,
-        G: SceneGraph<Node = N, Prefab = P>,
-        N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+        G: SceneGraph<NodeWrapper = N, Prefab = P>,
+        N: NodeWrapper<SceneGraph = G, ResourceData = P>,
     {
         if let Some(layer) = machine.layers().get(layer_index) {
             if message.destination() == self.canvas {
@@ -318,7 +318,7 @@ impl StateViewer {
                                         let node_ref = ui.node(*n);
 
                                         node_ref
-                                            .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                                            .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                                             .map(|state_node| {
                                                 SelectedEntity::PoseNode(state_node.model_handle)
                                             })
@@ -338,7 +338,7 @@ impl StateViewer {
                                 fetch_socket_pose_node_model_handle(*source_socket, ui);
 
                             let dest_socket_ref =
-                                ui.node(*dest_socket).query_component::<Socket>().unwrap();
+                                ui.node(*dest_socket).self_or_field_ref::<Socket>().unwrap();
                             let dest_node = fetch_socket_pose_node_model_handle(*dest_socket, ui);
 
                             let dest_node_ref = &layer.nodes()[dest_node];
@@ -416,8 +416,8 @@ impl StateViewer {
         animation_container: Option<&AnimationContainer<Handle<N>>>,
     ) where
         P: PrefabData<Graph = G>,
-        G: SceneGraph<Node = N, Prefab = P>,
-        N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+        G: SceneGraph<NodeWrapper = N, Prefab = P>,
+        N: NodeWrapper<SceneGraph = G, ResourceData = P>,
     {
         if let Ok(parent_state_ref) = machine_layer.states().try_borrow(self.state.into()) {
             let current_selection = fetch_selection(editor_selection);
@@ -437,7 +437,7 @@ impl StateViewer {
                     .filter(|h| {
                         if let Some(pose_node) = ui
                             .node(*h)
-                            .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                            .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                         {
                             if machine_layer
                                 .nodes()
@@ -480,7 +480,7 @@ impl StateViewer {
                     for &pose_definition in models.iter() {
                         if views.iter().all(|v| {
                             ui.node(*v)
-                                .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                                .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                                 .unwrap()
                                 .model_handle
                                 != pose_definition
@@ -556,7 +556,7 @@ impl StateViewer {
                     for &view in views.clone().iter() {
                         let view_ref = ui
                             .node(view)
-                            .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                            .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                             .unwrap();
 
                         if machine_layer
@@ -578,7 +578,7 @@ impl StateViewer {
             for &view in &views {
                 let view_ref = ui
                     .node(view)
-                    .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                    .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                     .unwrap();
                 let model_handle = view_ref.model_handle;
                 let model_ref = &machine_layer.nodes()[model_handle];
@@ -631,7 +631,7 @@ impl StateViewer {
             // for connection we can't find which connection has changed and sync only it, instead we
             // removing every connection and create new.
             for child in ui[self.canvas].children().iter().cloned() {
-                if ui.node(child).has_component::<Connection>() {
+                if ui.node(child).is_or_has_field::<Connection>() {
                     ui.send_sync(child, WidgetMessage::Remove);
                 }
             }
@@ -641,7 +641,7 @@ impl StateViewer {
                     .iter()
                     .filter_map(|v| {
                         ui.node(*v)
-                            .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                            .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                     })
                     .find(|v| v.model_handle == model)
                     .unwrap();
@@ -658,7 +658,7 @@ impl StateViewer {
                             .iter()
                             .filter_map(|v| {
                                 ui.node(*v)
-                                    .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                                    .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                             })
                             .find(|v| v.model_handle == child)
                             .unwrap();
@@ -690,7 +690,7 @@ impl StateViewer {
                     }
                     SelectedEntity::PoseNode(pose_node) => views.iter().cloned().find(|s| {
                         ui.node(*s)
-                            .query_component::<AbsmNode<PoseNode<Handle<N>>>>()
+                            .self_or_field_ref::<AbsmNode<PoseNode<Handle<N>>>>()
                             .unwrap()
                             .model_handle
                             == *pose_node

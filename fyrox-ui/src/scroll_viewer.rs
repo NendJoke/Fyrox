@@ -25,10 +25,7 @@
 #![warn(missing_docs)]
 
 use crate::{
-    core::{
-        algebra::Vector2, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        uuid_provider, visitor::prelude::*,
-    },
+    core::{algebra::Vector2, pool::Handle, reflect::prelude::*, visitor::prelude::*},
     grid::{Column, GridBuilder, Row},
     message::{MessageDirection, UiMessage},
     scroll_bar::{ScrollBar, ScrollBarBuilder, ScrollBarMessage},
@@ -169,8 +166,11 @@ impl ScrollViewerMessage {
 ///     ui.send(scroll_viewer, ScrollViewerMessage::BringIntoView(child))
 /// }
 /// ```
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "173e869f-7da0-4ae2-915a-5d545d8150cc"
+)]
 pub struct ScrollViewer {
     /// Base widget of the scroll viewer.
     pub widget: Widget,
@@ -202,8 +202,6 @@ impl ConstructorProvider<UiNode, UserInterface> for ScrollViewer {
 }
 
 crate::define_widget_deref!(ScrollViewer);
-
-uuid_provider!(ScrollViewer = "173e869f-7da0-4ae2-915a-5d545d8150cc");
 
 impl Control for ScrollViewer {
     fn arrange_override(&self, ui: &UserInterface, final_size: Vector2<f32>) -> Vector2<f32> {

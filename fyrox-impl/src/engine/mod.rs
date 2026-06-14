@@ -46,6 +46,7 @@ use crate::{
         instant,
         log::Log,
         pool::Handle,
+        reflect::prelude::*,
         reflect::Reflect,
         task::TaskPool,
         warn, SafeLock,
@@ -117,6 +118,7 @@ use fyrox_sound::{
     buffer::{loader::SoundBufferLoader, SoundBuffer},
     renderer::hrtf::{HrirSphereLoader, HrirSphereResourceData},
 };
+use std::fmt::Debug;
 use std::{
     any::TypeId,
     cell::Cell,
@@ -143,11 +145,24 @@ use winit::{
 
 /// Serialization context holds runtime type information that allows to create unknown types using
 /// their UUIDs and a respective constructors.
+#[derive(Reflect)]
+#[reflect(
+    hide_all,
+    non_cloneable,
+    non_comparable,
+    type_uuid = "1973a8c9-6ac6-48a2-bca1-9b4f3cce0774"
+)]
 pub struct SerializationContext {
     /// A node constructor container.
     pub node_constructors: NodeConstructorContainer,
     /// A script constructor container.
     pub script_constructors: ScriptConstructorContainer,
+}
+
+impl Debug for SerializationContext {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SerializationContext")
+    }
 }
 
 impl Default for SerializationContext {
@@ -2540,7 +2555,7 @@ impl Engine {
         plugin.prepare_to_reload();
 
         let plugin_type_id = plugin.as_loaded_ref().type_id();
-        let plugin_assembly_name = plugin.as_loaded_ref().assembly_name();
+        let plugin_assembly_name = plugin.as_loaded_ref().type_info_ref().assembly_name;
 
         // Collect all the data that belongs to the plugin
         let mut scenes_state = Vec::new();
@@ -2631,11 +2646,9 @@ impl Engine {
             for resource in state.resources().iter() {
                 let data = resource.lock();
                 if let ResourceState::Ok { ref data, .. } = data.state {
-                    data.as_reflect(&mut |reflect| {
-                        if reflect.assembly_name() == plugin_assembly_name {
-                            resources_to_reload.insert(resource.clone());
-                        }
-                    })
+                    if data.type_info_ref().assembly_name == plugin_assembly_name {
+                        resources_to_reload.insert(resource.clone());
+                    }
                 }
             }
 
@@ -2857,10 +2870,7 @@ mod test {
     use crate::scene::pivot::Pivot;
     use crate::{
         asset::manager::ResourceManager,
-        core::{
-            pool::Handle, reflect::prelude::*, task::TaskPool, type_traits::prelude::*,
-            visitor::prelude::*,
-        },
+        core::{pool::Handle, reflect::prelude::*, task::TaskPool, visitor::prelude::*},
         engine::{task::TaskPoolHandler, GraphicsContext, ScriptProcessor},
         graph::SceneGraph,
         scene::{base::BaseBuilder, node::Node, pivot::PivotBuilder, Scene, SceneContainer},
@@ -2916,8 +2926,8 @@ mod test {
         EventReceived(Source),
     }
 
-    #[derive(Debug, Clone, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "2569de84-d4b2-427d-969b-d5c7b31a0ba6")]
+    #[derive(Debug, Clone, Reflect, Visit)]
+    #[reflect(type_uuid = "2569de84-d4b2-427d-969b-d5c7b31a0ba6", non_comparable)]
     struct MyScript {
         #[reflect(hidden)]
         #[visit(skip)]
@@ -2983,8 +2993,8 @@ mod test {
         }
     }
 
-    #[derive(Debug, Clone, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "1cebacd9-b500-4753-93be-39db344add21")]
+    #[derive(Debug, Clone, Reflect, Visit)]
+    #[reflect(type_uuid = "1cebacd9-b500-4753-93be-39db344add21", non_comparable)]
     struct MySubScript {
         #[reflect(hidden)]
         #[visit(skip)]
@@ -3142,8 +3152,8 @@ mod test {
         Bar(String),
     }
 
-    #[derive(Debug, Clone, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "bf2976ad-f41d-4de6-9a32-b1a293956058")]
+    #[derive(Debug, Clone, Reflect, Visit)]
+    #[reflect(type_uuid = "bf2976ad-f41d-4de6-9a32-b1a293956058", non_comparable)]
     struct ScriptListeningToMessages {
         index: u32,
         #[reflect(hidden)]
@@ -3193,8 +3203,8 @@ mod test {
         }
     }
 
-    #[derive(Debug, Clone, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "6bcbf9b4-9546-42d3-965a-de055ab85475")]
+    #[derive(Debug, Clone, PartialEq, Reflect, Visit)]
+    #[reflect(type_uuid = "6bcbf9b4-9546-42d3-965a-de055ab85475")]
     struct ScriptSendingMessages {
         index: u32,
     }
@@ -3282,8 +3292,8 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, PartialEq, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "7bcbf9b4-9546-42d3-965a-de055ab85475")]
+    #[derive(Clone, Debug, PartialEq, Reflect, Visit)]
+    #[reflect(type_uuid = "7bcbf9b4-9546-42d3-965a-de055ab85475")]
     pub struct ScriptSpawningAsyncTasks {
         num: Option<u32>,
     }
@@ -3305,8 +3315,8 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, PartialEq, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "8bcbf9b4-9546-42d3-965a-de055ab85475")]
+    #[derive(Clone, Debug, PartialEq, Reflect, Visit)]
+    #[reflect(type_uuid = "8bcbf9b4-9546-42d3-965a-de055ab85475")]
     pub struct ScriptWithoutAsyncTasks {}
 
     impl ScriptTrait for ScriptWithoutAsyncTasks {}
@@ -3382,8 +3392,8 @@ mod test {
         );
     }
 
-    #[derive(Clone, Debug, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "9bcbf9b4-9546-42d3-965a-de055ab85475")]
+    #[derive(Clone, Debug, Reflect, Visit)]
+    #[reflect(type_uuid = "9bcbf9b4-9546-42d3-965a-de055ab85475", non_comparable)]
     pub struct ScriptThatDeletesItself {
         #[reflect(hidden)]
         #[visit(skip)]
@@ -3423,8 +3433,8 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "9bcbf9b4-9546-42d3-965a-de055ab85475")]
+    #[derive(Clone, Debug, Reflect, Visit)]
+    #[reflect(type_uuid = "9bcbf9b4-9546-42d3-965a-de055ab85475", non_comparable)]
     pub struct ScriptThatAddsScripts {
         num: usize,
         #[reflect(hidden)]
@@ -3472,8 +3482,8 @@ mod test {
         }
     }
 
-    #[derive(Clone, Debug, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "9bcbf9b4-9546-42d3-965a-de055ab85475")]
+    #[derive(Clone, Debug, Reflect, Visit)]
+    #[reflect(type_uuid = "9bcbf9b4-9546-42d3-965a-de055ab85475", non_comparable)]
     pub struct SimpleScript {
         stuff: usize,
         #[reflect(hidden)]

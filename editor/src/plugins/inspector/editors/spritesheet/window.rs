@@ -20,10 +20,7 @@
 
 use crate::fyrox::graph::SceneGraph;
 use crate::fyrox::{
-    core::{
-        algebra::Vector2, parking_lot::Mutex, pool::Handle, reflect::prelude::*,
-        type_traits::prelude::*, uuid_provider, visitor::prelude::*,
-    },
+    core::{algebra::Vector2, pool::Handle, reflect::prelude::*, visitor::prelude::*},
     gui::{
         border::BorderBuilder,
         button::{ButtonBuilder, ButtonMessage},
@@ -54,15 +51,18 @@ use fyrox::gui::image::Image;
 use fyrox::gui::numeric::NumericUpDown;
 use fyrox::gui::style::resource::StyleResourceExt;
 use fyrox::gui::style::Style;
+use fyrox::gui::widget::UserData;
 use std::{
     ops::{Deref, DerefMut},
-    sync::{mpsc::Sender, Arc},
+    sync::mpsc::Sender,
 };
 
-#[derive(Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "55607fe0-2996-418d-ad31-a5b96fdfa4b7"
+)]
 pub struct SpriteSheetFramesEditorWindow {
-    #[component(include)]
     window: Window,
     editor: Handle<UiNode>,
     ok: Handle<Button>,
@@ -89,8 +89,6 @@ impl DerefMut for SpriteSheetFramesEditorWindow {
         &mut self.window.widget
     }
 }
-
-uuid_provider!(SpriteSheetFramesEditorWindow = "55607fe0-2996-418d-ad31-a5b96fdfa4b7");
 
 impl Control for SpriteSheetFramesEditorWindow {
     fn on_remove(&self, sender: &Sender<UiMessage>) {
@@ -206,7 +204,7 @@ fn make_grid(
                         .with_height(16.0)
                         .on_row(i as usize)
                         .on_column(j as usize)
-                        .with_user_data(Arc::new(Mutex::new(cell_position))),
+                        .with_user_data(UserData::new(cell_position)),
                 )
                 .checked(Some(container.iter().any(|pos| *pos == cell_position)))
                 .build(ctx),

@@ -27,8 +27,8 @@ use crate::{
     border::{Border, BorderBuilder},
     brush::Brush,
     core::{
-        algebra::Vector2, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        uuid_provider, variable::InheritableVariable, visitor::prelude::*,
+        algebra::Vector2, pool::Handle, reflect::prelude::*, variable::InheritableVariable,
+        visitor::prelude::*,
     },
     draw::DrawingContext,
     message::{MessageData, UiMessage},
@@ -86,11 +86,13 @@ impl MessageData for DecoratorMessage {}
 ///         .build(ctx)
 /// }
 /// ```
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "bb4b60aa-c657-4ed6-8db6-d7f374397c73"
+)]
 pub struct Decorator {
     /// Base widget of the decorator.
-    #[component(include)]
     pub border: Border,
     /// Current brush used for `Normal` state.
     pub normal_brush: InheritableVariable<StyledProperty<Brush>>,
@@ -134,8 +136,6 @@ impl DerefMut for Decorator {
         &mut self.border
     }
 }
-
-uuid_provider!(Decorator = "bb4b60aa-c657-4ed6-8db6-d7f374397c73");
 
 impl Control for Decorator {
     fn measure_override(&self, ui: &UserInterface, available_size: Vector2<f32>) -> Vector2<f32> {

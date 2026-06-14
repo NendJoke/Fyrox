@@ -33,7 +33,6 @@ use crate::{
         parking_lot::Mutex,
         pool::Handle,
         reflect::prelude::*,
-        uuid_provider,
         variable::{InheritableVariable, VariableFlags},
         visitor::prelude::*,
         BiDirHashMap, SafeLock,
@@ -79,7 +78,7 @@ use std::{
 };
 use strum_macros::{AsRefStr, EnumString, VariantNames};
 
-use fyrox_graph::{SceneGraph, SceneGraphNode};
+use fyrox_graph::{NodeWrapper, SceneGraph};
 pub use rapier3d::geometry::shape::*;
 use rapier3d::math::{Pose3, Vec3};
 use rapier3d::parry::query::DefaultQueryDispatcher;
@@ -130,6 +129,7 @@ impl From<rapier2d::geometry::FeatureId> for FeatureId {
     Copy, Clone, Debug, PartialEq, Eq, Visit, Reflect, VariantNames, EnumString, AsRefStr, Default,
 )]
 #[repr(u32)]
+#[reflect(type_uuid = "775d5598-c283-4b44-9cc0-2e23dc8936f4")]
 pub enum CoefficientCombineRule {
     /// The two coefficients are averaged.
     #[default]
@@ -143,8 +143,6 @@ pub enum CoefficientCombineRule {
     /// The clamped sum of the two coefficients.
     ClampedSum = 4,
 }
-
-uuid_provider!(CoefficientCombineRule = "775d5598-c283-4b44-9cc0-2e23dc8936f4");
 
 impl From<rapier3d::dynamics::CoefficientCombineRule> for CoefficientCombineRule {
     fn from(v: rapier3d::dynamics::CoefficientCombineRule) -> Self {
@@ -195,7 +193,7 @@ impl Into<rapier2d::dynamics::CoefficientCombineRule> for CoefficientCombineRule
 }
 
 /// Performance statistics for the physics part of the engine.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, PartialEq, Default, Clone)]
 pub struct PhysicsPerformanceStatistics {
     /// A time that was needed to perform a single simulation step.
     pub step_time: Duration,
@@ -525,7 +523,7 @@ fn make_trimesh(
     let root_inv_transform = owner_inv_transform;
 
     for &source in sources {
-        if let Ok(mesh) = nodes.try_get_component_of_type::<Mesh>(source.0) {
+        if let Ok(mesh) = nodes.try_get_or_field_ref::<Mesh>(source.0) {
             let global_transform = root_inv_transform * mesh.global_transform();
 
             for surface in mesh.surfaces() {
@@ -810,11 +808,11 @@ fn collider_shape_into_native_shape(
             }
         }
         ColliderShape::Heightfield(heightfield) => pool
-            .try_get_component_of_type::<Terrain>(heightfield.geometry_source.0)
+            .try_get_or_field_ref::<Terrain>(heightfield.geometry_source.0)
             .ok()
             .and_then(make_heightfield),
         ColliderShape::Polyhedron(polyhedron) => pool
-            .try_get_component_of_type::<Mesh>(polyhedron.geometry_source.0)
+            .try_get_or_field_ref::<Mesh>(polyhedron.geometry_source.0)
             .ok()
             .map(|mesh| make_polyhedron_shape(owner_inv_global_transform, mesh)),
     }
@@ -828,6 +826,7 @@ fn collider_shape_into_native_shape(
 /// each parameter.
 #[derive(Copy, Clone, Visit, Reflect, Debug, PartialEq)]
 #[visit(optional)]
+#[reflect(type_uuid = "bd4ca07f-34a5-4cf8-a70e-24919124545b")]
 pub struct IntegrationParameters {
     /// The time step length, default is None - this means that physics simulation will use engine's
     /// time step.
@@ -913,6 +912,7 @@ impl Default for IntegrationParameters {
 /// methods, mostly for ray casting. You should add physical entities using scene graph nodes, such
 /// as RigidBody, Collider, Joint.
 #[derive(Visit, Reflect)]
+#[reflect(type_uuid = "17e663b8-98a4-46db-be71-a336246f571a", non_comparable)]
 pub struct PhysicsWorld {
     /// A flag that defines whether physics simulation is enabled or not.
     pub enabled: InheritableVariable<bool>,
@@ -1300,7 +1300,10 @@ impl PhysicsWorld {
                 let h = Handle::decode_from_u128(self.colliders.get(handle).unwrap().user_data);
                 pred(
                     h,
-                    graph.node(h).component_ref::<collider::Collider>().unwrap(),
+                    graph
+                        .node(h)
+                        .self_or_field_ref::<collider::Collider>()
+                        .unwrap(),
                 )
             } else {
                 true
@@ -1438,7 +1441,7 @@ impl PhysicsWorld {
         // 1) `get_mut` is **very** expensive because it forces physics engine to recalculate contacts
         //    and a lot of other stuff, this is why we need `anything_changed` flag.
         if rigid_body_node.native.get() != RigidBodyHandle::invalid() {
-            let mut actions = rigid_body_node.actions.safe_lock();
+            let mut actions = rigid_body_node.actions.inner();
             if rigid_body_node.need_sync_model() || !actions.is_empty() {
                 if let Some(native) = self.bodies.get_mut(rigid_body_node.native.get()) {
                     // Sync native rigid body's properties with scene node's in case if they
@@ -1712,7 +1715,7 @@ impl PhysicsWorld {
                 }
             }
         } else if let Ok(parent_body) =
-            nodes.try_get_component_of_type::<scene::rigidbody::RigidBody>(collider_node.parent())
+            nodes.try_get_or_field_ref::<scene::rigidbody::RigidBody>(collider_node.parent())
         {
             if parent_body.native.get() != RigidBodyHandle::invalid() {
                 let inv_global_transform = isometric_global_transform(nodes, handle)

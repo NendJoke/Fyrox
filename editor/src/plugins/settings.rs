@@ -23,9 +23,7 @@
 use crate::menu::create_menu_item_shortcut;
 use crate::{
     fyrox::{
-        core::{
-            log::Log, parking_lot::lock_api::Mutex, pool::Handle, reflect::Reflect, some_or_return,
-        },
+        core::{log::Log, pool::Handle, reflect::Reflect, some_or_return},
         engine::Engine,
         graph::SceneGraph,
         gui::{
@@ -51,7 +49,8 @@ use crate::{
     settings::Settings,
     Editor,
 };
-use fyrox::core::{ok_or_return, uuid, Uuid};
+use fyrox::core::ok_or_return;
+use fyrox::core::uuid::{uuid, Uuid};
 use fyrox::engine::GraphicsContext;
 use fyrox::gui::button::Button;
 use fyrox::gui::dock::DockingManager;
@@ -60,6 +59,7 @@ use fyrox::gui::scroll_viewer::ScrollViewer;
 use fyrox::gui::searchbar::SearchBar;
 use fyrox::gui::stack_panel::StackPanel;
 use fyrox::gui::text_box::EmptyTextPlaceholder;
+use fyrox::gui::widget::UserData;
 use fyrox::gui::window::{Window, WindowAlignment};
 use rust_fuzzy_search::fuzzy_compare;
 use std::sync::Arc;
@@ -219,22 +219,23 @@ impl SettingsWindow {
             generate_property_string_values: true,
             filter: Default::default(),
             name_column_width: 250.0,
+            hide_name_column: false,
             base_path: Default::default(),
             has_parent_object: false,
         });
-        let groups =
-            context
-                .entries
-                .iter()
-                .map(|entry| {
-                    ButtonBuilder::new(WidgetBuilder::new().with_user_data(Arc::new(Mutex::new(
-                        GroupName(entry.property_tag.clone()),
-                    ))))
-                    .with_text(&entry.property_display_name)
-                    .build(ctx)
-                    .to_base()
-                })
-                .collect::<Vec<_>>();
+        let groups = context
+            .entries
+            .iter()
+            .map(|entry| {
+                ButtonBuilder::new(
+                    WidgetBuilder::new()
+                        .with_user_data(UserData::new(GroupName(entry.property_tag.clone()))),
+                )
+                .with_text(&entry.property_display_name)
+                .build(ctx)
+                .to_base()
+            })
+            .collect::<Vec<_>>();
         ui.send(self.groups, WidgetMessage::ReplaceChildren(groups));
         ui.send(self.inspector, InspectorMessage::Context(context));
     }
@@ -253,7 +254,7 @@ impl SettingsWindow {
                 // matching search criteria.
                 let mut inner_match = false;
                 let sub_inspector = ui.find_handle(entry.property_editor, &mut |node| {
-                    node.has_component::<Inspector>()
+                    node.is_or_has_field::<Inspector>()
                 });
                 if sub_inspector.is_some() {
                     inner_match |= apply_recursive(filter_text, sub_inspector, ui);

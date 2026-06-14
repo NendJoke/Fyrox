@@ -53,7 +53,7 @@
 //!     let hrir_path = PathBuf::from("examples/data/IRC_1002_C.bin");
 //!     let hrir_sphere = HrirSphere::from_file(&hrir_path, SoundEngine::DEFAULT_SAMPLE_RATE).unwrap();
 //!
-//!     context.state().set_renderer(Renderer::HrtfRenderer(HrtfRenderer::new(HrirSphereResource::from_hrir_sphere(hrir_sphere, ResourceKind::Embedded))));
+//!     context.state().set_renderer(Renderer::HrtfRenderer(HrtfRenderer::new(SoundEngine::DEFAULT_SAMPLE_RATE, HrirSphereResource::from_hrir_sphere(hrir_sphere, ResourceKind::Embedded))));
 //! }
 //! ```
 //!
@@ -85,7 +85,6 @@ use fyrox_core::{
     reflect::prelude::*,
     uuid::{uuid, Uuid},
     visitor::{Visit, VisitResult, Visitor},
-    TypeUuidProvider,
 };
 use fyrox_resource::untyped::ResourceKind;
 use fyrox_resource::{
@@ -143,10 +142,17 @@ impl Display for HrtfError {
 
 /// See module docs.
 #[derive(Clone, Debug, Default, Reflect)]
+#[reflect(type_uuid = "c6149a3b-7992-44a8-9b9f-16651a5d2b15", non_comparable)]
 pub struct HrtfRenderer {
     hrir_resource: Option<HrirSphereResource>,
     #[reflect(hidden)]
     processor: Option<hrtf::HrtfProcessor>,
+}
+
+impl PartialEq for HrtfRenderer {
+    fn eq(&self, other: &Self) -> bool {
+        self.hrir_resource == other.hrir_resource
+    }
 }
 
 impl Visit for HrtfRenderer {
@@ -243,6 +249,16 @@ enum HrirSource {
     RawData(Vec<u8>),
 }
 
+impl PartialEq for HrirSource {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Preloaded(a), Self::Preloaded(b)) => a.source() == b.source(),
+            (Self::RawData(a), Self::RawData(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 impl Default for HrirSource {
     fn default() -> Self {
         Self::RawData(Default::default())
@@ -251,7 +267,8 @@ impl Default for HrirSource {
 
 /// Wrapper for [`HrirSphere`] to be able to use it in the resource manager, that will handle async resource
 /// loading automatically.
-#[derive(Reflect, Default, Clone, Visit)]
+#[derive(Reflect, Default, PartialEq, Clone, Visit)]
+#[reflect(type_uuid = "c92a0fa3-0ed3-49a9-be44-8f06271c6be2", non_comparable)]
 pub struct HrirSphereResourceData {
     #[reflect(hidden)]
     #[visit(skip)]
@@ -280,17 +297,7 @@ impl Debug for HrirSphereResourceData {
     }
 }
 
-impl TypeUuidProvider for HrirSphereResourceData {
-    fn type_uuid() -> Uuid {
-        uuid!("c92a0fa3-0ed3-49a9-be44-8f06271c6be2")
-    }
-}
-
 impl ResourceData for HrirSphereResourceData {
-    fn type_uuid(&self) -> Uuid {
-        <Self as TypeUuidProvider>::type_uuid()
-    }
-
     fn save(&mut self, _path: &Path) -> Result<(), Box<dyn Error>> {
         Err("Saving is not supported!".to_string().into())
     }
@@ -313,7 +320,7 @@ impl ResourceLoader for HrirSphereLoader {
     }
 
     fn data_type_uuid(&self) -> Uuid {
-        <HrirSphereResourceData as TypeUuidProvider>::type_uuid()
+        <HrirSphereResourceData as Reflect>::type_info().type_uuid
     }
 
     fn load(&self, path: PathBuf, io: Arc<dyn ResourceIo>) -> BoxedLoaderFuture {

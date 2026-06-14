@@ -27,7 +27,7 @@ use crate::{
         asset::{manager::ResourceManager, state::LoadError, Resource, TypedResourceData},
         core::{
             color::Color, log::Log, parking_lot::Mutex, pool::Handle, reflect::prelude::*,
-            type_traits::prelude::*, uuid::uuid, visitor::prelude::*, PhantomDataSendSync,
+            uuid::uuid, visitor::prelude::*, PhantomDataSendSync,
         },
         graph::SceneGraph,
         gui::{
@@ -114,8 +114,12 @@ pub type ResourceLoaderCallback<T> = Arc<
     >,
 >;
 
-#[derive(Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Visit, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "5179b3b9-855f-43a6-b23a-831129fee1cf",
+    non_comparable
+)]
 pub struct ResourceField<T>
 where
     T: TypedResourceData,
@@ -178,12 +182,6 @@ where
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.widget
-    }
-}
-
-impl<T: TypedResourceData> TypeUuidProvider for ResourceField<T> {
-    fn type_uuid() -> Uuid {
-        uuid!("5179b3b9-855f-43a6-b23a-831129fee1cf")
     }
 }
 

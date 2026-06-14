@@ -23,9 +23,7 @@ use crate::file_browser::FileSelector;
 use crate::text_box::TextBox;
 use crate::{
     button::{ButtonBuilder, ButtonMessage},
-    core::{
-        pool::Handle, reflect::prelude::*, uuid_provider, visitor::prelude::*, ComponentProvider,
-    },
+    core::{pool::Handle, reflect::prelude::*, visitor::prelude::*},
     define_widget_deref,
     file_browser::{FileSelectorBuilder, FileSelectorMessage, FileSelectorMode},
     grid::{Column, GridBuilder, Row},
@@ -48,10 +46,11 @@ impl MessageData for FileSelectorFieldMessage {}
 
 define_widget_deref!(FileSelectorField);
 
-uuid_provider!(FileSelectorField = "2dbda730-8a60-4f62-aee8-2ff0ccd15bf2");
-
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "2dbda730-8a60-4f62-aee8-2ff0ccd15bf2"
+)]
 pub struct FileSelectorField {
     widget: Widget,
     path: PathBuf,

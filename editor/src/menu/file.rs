@@ -23,7 +23,7 @@ use crate::{
     export::ExportWindow,
     fyrox::{
         asset::manager::ResourceManager,
-        core::{pool::Handle, uuid, Uuid},
+        core::pool::Handle,
         gui::{
             file_browser::{FileSelectorBuilder, FileSelectorMessage, FileType, PathFilter},
             menu::{self, MenuItemMessage},
@@ -41,12 +41,12 @@ use crate::{
     settings::{recent::RecentFiles, Settings},
     Engine, Message, Mode, Panels, SaveSceneConfirmationDialogAction,
 };
-use fyrox::core::parking_lot::Mutex;
+use fyrox::core::uuid::{uuid, Uuid};
 use fyrox::graph::SceneGraph;
 use fyrox::gui::file_browser::FileSelector;
 use fyrox::gui::menu::MenuItem;
 use fyrox::gui::messagebox::MessageBox;
-use std::sync::Arc;
+use fyrox::gui::widget::UserData;
 use std::{path::PathBuf, sync::mpsc::Sender};
 
 pub struct FileMenu {
@@ -81,7 +81,7 @@ fn make_recent_files_items(
         .iter()
         .map(|f| {
             let item = create_menu_item(f.to_string_lossy().as_ref(), Uuid::new_v4(), vec![], ctx);
-            ctx[item].user_data = Some(Arc::new(Mutex::new(RecentFile(f.to_path_buf()))));
+            ctx[item].user_data = Some(UserData::new(RecentFile(f.to_path_buf())));
             item
         })
         .collect::<Vec<_>>()

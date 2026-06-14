@@ -24,15 +24,12 @@
 #![warn(missing_docs)]
 
 use crate::{
-    core::{
-        algebra::Vector2, math::Rect, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        visitor::prelude::*,
-    },
+    core::{algebra::Vector2, math::Rect, pool::Handle, reflect::prelude::*, visitor::prelude::*},
     message::{MessageData, UiMessage},
     widget::{Widget, WidgetBuilder},
     BuildContext, Control, Orientation, UiNode, UserInterface,
 };
-use fyrox_core::uuid_provider;
+
 use fyrox_core::variable::InheritableVariable;
 use fyrox_graph::constructor::{ConstructorProvider, GraphNodeConstructor};
 use fyrox_graph::SceneGraph;
@@ -110,8 +107,11 @@ impl MessageData for StackPanelMessage {}
 ///     .build(ctx);
 /// # }
 /// ```
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "d868f554-a2c5-4280-abfc-396d10a0e1ed"
+)]
 pub struct StackPanel {
     /// Base widget of the stack panel.
     pub widget: Widget,
@@ -133,8 +133,6 @@ impl ConstructorProvider<UiNode, UserInterface> for StackPanel {
 }
 
 crate::define_widget_deref!(StackPanel);
-
-uuid_provider!(StackPanel = "d868f554-a2c5-4280-abfc-396d10a0e1ed");
 
 impl Control for StackPanel {
     fn measure_override(&self, ui: &UserInterface, available_size: Vector2<f32>) -> Vector2<f32> {

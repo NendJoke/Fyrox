@@ -26,11 +26,9 @@ use fyrox::plugin::error::GameResult;
 use fyrox::{
     core::{
         algebra::{UnitQuaternion, UnitVector3, Vector3},
-        impl_component_provider,
         math::curve::{Curve, CurveKey, CurveKeyKind},
         math::Vector3Ext,
         reflect::prelude::*,
-        uuid_provider,
         variable::InheritableVariable,
         visitor::prelude::*,
     },
@@ -44,7 +42,8 @@ use std::ops::Range;
 /// Flying camera controller script is used to create flying cameras, that can be rotated via mouse and moved via keyboard keys.
 /// Use it, if you need to create a sort of "spectator" camera. To use it, all you need to do is to assign it to your camera
 /// node (or one if its parent nodes).
-#[derive(Visit, Reflect, Debug, Clone)]
+#[derive(Visit, PartialEq, Reflect, Debug, Clone)]
+#[reflect(type_uuid = "8d9e2feb-8c61-482c-8ba4-b0b13b201113")]
 pub struct FlyingCameraController {
     /// Current yaw of the camera pivot (in radians).
     #[visit(optional)]
@@ -200,9 +199,6 @@ impl Default for FlyingCameraController {
         }
     }
 }
-
-impl_component_provider!(FlyingCameraController);
-uuid_provider!(FlyingCameraController = "8d9e2feb-8c61-482c-8ba4-b0b13b201113");
 
 impl ScriptTrait for FlyingCameraController {
     fn on_os_event(&mut self, event: &Event<()>, context: &mut ScriptContext) -> GameResult {

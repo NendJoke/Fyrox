@@ -42,9 +42,7 @@ impl ResourceGraphNode {
 
         let header = resource.lock();
         if let ResourceState::Ok { ref data, .. } = header.state {
-            (**data).as_reflect(&mut |entity| {
-                collect_used_resources(entity, &mut dependent_resources);
-            });
+            collect_used_resources(data, &mut dependent_resources);
         }
 
         children.extend(
@@ -115,10 +113,9 @@ impl ResourceDependencyGraph {
 }
 #[cfg(test)]
 mod test {
-    use fyrox_core::Uuid;
-
     use super::*;
     use crate::untyped::ResourceKind;
+    use fyrox_core::uuid::Uuid;
 
     #[test]
     fn resource_graph_node_new() {

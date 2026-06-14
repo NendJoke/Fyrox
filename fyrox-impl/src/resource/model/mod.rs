@@ -51,15 +51,14 @@ use crate::{
         pool::Handle,
         reflect::prelude::*,
         uuid::Uuid,
-        uuid_provider,
         variable::InheritableVariable,
         visitor::error::VisitError,
         visitor::{Visit, VisitResult, Visitor},
-        NameProvider, TypeUuidProvider,
+        NameProvider,
     },
     engine::SerializationContext,
     generic_animation::AnimationContainer,
-    graph::{NodeHandleMap, NodeMapping, PrefabData, SceneGraph, SceneGraphNode},
+    graph::{NodeHandleMap, NodeMapping, NodeWrapper, PrefabData, SceneGraph},
     resource::fbx::{self, error::FbxError},
     scene::{
         animation::Animation, base::SceneNodeId, graph::Graph, node::Node, transform::Transform,
@@ -82,7 +81,8 @@ use uuid::uuid;
 pub mod loader;
 
 /// See module docs.
-#[derive(Debug, Clone, Visit, Reflect)]
+#[derive(Debug, PartialEq, Clone, Visit, Reflect)]
+#[reflect(type_uuid = "44cd768f-b4ca-4804-a98c-0adf85577ada")]
 pub struct Model {
     #[visit(skip)]
     pub(crate) mapping: NodeMapping,
@@ -101,12 +101,6 @@ impl PrefabData for Model {
     #[inline]
     fn mapping(&self) -> NodeMapping {
         self.mapping
-    }
-}
-
-impl TypeUuidProvider for Model {
-    fn type_uuid() -> Uuid {
-        uuid!("44cd768f-b4ca-4804-a98c-0adf85577ada")
     }
 }
 
@@ -204,9 +198,9 @@ pub trait AnimationSource {
     /// Prefab type.
     type Prefab: PrefabData<Graph = Self::SceneGraph>;
     /// Scene graph type.
-    type SceneGraph: SceneGraph<Node = Self::Node, Prefab = Self::Prefab>;
+    type SceneGraph: SceneGraph<NodeWrapper = Self::Node, Prefab = Self::Prefab>;
     /// Scene node type.
-    type Node: SceneGraphNode<SceneGraph = Self::SceneGraph, ResourceData = Self::Prefab>;
+    type Node: NodeWrapper<SceneGraph = Self::SceneGraph, ResourceData = Self::Prefab>;
 
     /// Returns a reference to an inner graph.
     fn inner_graph(&self) -> &Self::SceneGraph;
@@ -243,7 +237,7 @@ pub trait AnimationSource {
         let model_graph = self.inner_graph();
         for src_node_ref in model_graph.linear_iter() {
             if let Some(src_animations) = src_node_ref
-                .component_ref::<InheritableVariable<AnimationContainer<Handle<Self::Node>>>>()
+                .self_or_field_ref::<InheritableVariable<AnimationContainer<Handle<Self::Node>>>>()
             {
                 for src_anim in src_animations.iter() {
                     let mut anim_copy = src_anim.clone();
@@ -316,7 +310,7 @@ pub trait AnimationSource {
 
         let dest_animations = graph
             .node_mut(dest_animation_player)
-            .component_mut::<InheritableVariable<AnimationContainer<Handle<Self::Node>>>>()
+            .self_or_field_mut::<InheritableVariable<AnimationContainer<Handle<Self::Node>>>>()
             .unwrap();
 
         for animation in animations {
@@ -340,7 +334,7 @@ pub trait AnimationSource {
         self_kind: ResourceKind,
     ) -> Vec<Handle<fyrox_animation::Animation<Handle<Self::Node>>>> {
         if let Some((animation_player, _)) = graph.find(root, &mut |n| {
-            n.component_ref::<InheritableVariable<AnimationContainer<Handle<Self::Node>>>>()
+            n.self_or_field_ref::<InheritableVariable<AnimationContainer<Handle<Self::Node>>>>()
                 .is_some()
         }) {
             self.retarget_animations_to_player(root, animation_player, graph, self_kind)
@@ -620,10 +614,6 @@ impl ModelResourceExtension for ModelResource {
 }
 
 impl ResourceData for Model {
-    fn type_uuid(&self) -> Uuid {
-        <Self as TypeUuidProvider>::type_uuid()
-    }
-
     fn save(&mut self, path: &Path) -> Result<(), Box<dyn Error>> {
         let mut visitor = Visitor::new();
         self.scene.save("Scene", &mut visitor)?;
@@ -674,6 +664,7 @@ impl Default for Model {
     VariantNames,
     Default,
 )]
+#[reflect(type_uuid = "11634aa0-cf8f-4532-a8cd-c0fa6ef804f1")]
 pub enum MaterialSearchOptions {
     /// Search in specified materials directory. It is suitable for cases when
     /// your model resource use shared textures.
@@ -711,8 +702,6 @@ pub enum MaterialSearchOptions {
     UsePathDirectly,
 }
 
-uuid_provider!(MaterialSearchOptions = "11634aa0-cf8f-4532-a8cd-c0fa6ef804f1");
-
 impl MaterialSearchOptions {
     /// A helper to create MaterialsDirectory variant.
     pub fn materials_directory<P: AsRef<Path>>(path: P) -> Self {
@@ -736,6 +725,7 @@ impl MaterialSearchOptions {
 ///
 /// Check documentation of the field of the structure for more info about each parameter.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, Reflect, Eq)]
+#[reflect(type_uuid = "9b1c3667-f571-4aac-81cf-bcec0dbf0e11")]
 pub struct ModelImportOptions {
     /// See [`MaterialSearchOptions`] docs for more info.
     #[serde(default)]

@@ -33,12 +33,12 @@ use crate::{
         pool::Handle,
         reflect::prelude::*,
         uuid::Uuid,
-        uuid_provider, variable,
+        variable,
         variable::mark_inheritable_properties_non_modified,
         visitor::{Visit, VisitResult, Visitor},
-        ComponentProvider, NameProvider,
+        NameProvider,
     },
-    graph::SceneGraphNode,
+    graph::NodeWrapper,
     renderer::bundle::RenderContext,
     resource::model::{Model, ModelResource},
     scene::{
@@ -64,7 +64,7 @@ use crate::{
 };
 use fyrox_core::{define_as_any_trait, pool::ObjectOrVariantHelper};
 use std::{
-    any::{Any, TypeId},
+    any::TypeId,
     fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut},
@@ -132,15 +132,16 @@ pub enum RdcControlFlow {
 }
 
 /// A main trait for any scene graph node.
-pub trait NodeTrait: BaseNodeTrait + Reflect + Visit + ComponentProvider {
+pub trait NodeTrait: BaseNodeTrait + Reflect + Visit {
     /// Brief debugging information about this node.
     fn summary(&self) -> String {
         use std::fmt::Write;
         let mut result = String::new();
         let type_name = self
-            .type_name()
+            .type_info_ref()
+            .type_name
             .strip_prefix("fyrox_impl::scene::")
-            .unwrap_or(self.type_name());
+            .unwrap_or(self.type_info_ref().type_name);
         write!(result, "{} {}<{}>", self.handle(), self.name(), type_name,).unwrap();
         if self.children().len() == 1 {
             result.push_str(" 1 child");
@@ -269,11 +270,11 @@ pub trait NodeTrait: BaseNodeTrait + Reflect + Visit + ComponentProvider {
 // See ObjectOrVariantHelper for the cause of the indirection.
 impl<T: NodeTrait> ObjectOrVariantHelper<Node, T> for PhantomData<T> {
     fn convert_to_dest_type_helper(node: &Node) -> Option<&T> {
-        (node.0.deref() as &dyn ComponentProvider).component_ref()
+        node.inner_ref().self_or_field_ref()
     }
 
     fn convert_to_dest_type_helper_mut(node: &mut Node) -> Option<&mut T> {
-        (node.0.deref_mut() as &mut dyn ComponentProvider).component_mut()
+        node.inner_mut().self_or_field_mut()
     }
 }
 
@@ -357,8 +358,15 @@ impl<T: NodeTrait> ObjectOrVariantHelper<Node, T> for PhantomData<T> {
 /// Such implementation of property inheritance has its drawbacks, major one is: each instance still holds its own copy of
 /// of every field, even those inheritable variables which are non-modified. Which means that there's no benefits of RAM
 /// consumption, only disk space usage is reduced.
-#[derive(Debug)]
-pub struct Node(pub(crate) Box<dyn NodeTrait>);
+#[derive(Debug, Reflect)]
+#[reflect(type_uuid = "a9bc5231-155c-4564-b0ca-f23972673925")]
+pub struct Node(#[reflect(deref, display_name = "Node")] pub(crate) Box<dyn NodeTrait>);
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.try_compare(&*other.0).unwrap_or_default()
+    }
+}
 
 impl<T: NodeTrait> From<T> for Node {
     fn from(value: T) -> Self {
@@ -372,10 +380,18 @@ impl Clone for Node {
     }
 }
 
-impl SceneGraphNode for Node {
+impl NodeWrapper for Node {
     type Base = Base;
     type SceneGraph = Graph;
     type ResourceData = Model;
+
+    fn inner_ref(&self) -> &dyn Reflect {
+        self.0.deref()
+    }
+
+    fn inner_mut(&mut self) -> &mut dyn Reflect {
+        self.0.deref_mut()
+    }
 
     fn base(&self) -> &Self::Base {
         self.0.deref()
@@ -427,18 +443,6 @@ impl NameProvider for Node {
         &self.0.name
     }
 }
-
-impl ComponentProvider for Node {
-    fn query_component_ref(&self, type_id: TypeId) -> Option<&dyn Any> {
-        self.0.query_component_ref(type_id)
-    }
-
-    fn query_component_mut(&mut self, type_id: TypeId) -> Option<&mut dyn Any> {
-        self.0.query_component_mut(type_id)
-    }
-}
-
-uuid_provider!(Node = "a9bc5231-155c-4564-b0ca-f23972673925");
 
 impl Deref for Node {
     type Target = dyn NodeTrait;
@@ -541,9 +545,7 @@ impl Node {
 
         // Reset inheritable properties, so property inheritance system will take properties
         // from parent objects on resolve stage.
-        self.as_reflect_mut(&mut |reflect| {
-            mark_inheritable_properties_non_modified(reflect, &[TypeId::of::<UntypedResource>()])
-        });
+        mark_inheritable_properties_non_modified(self, &[TypeId::of::<UntypedResource>()]);
 
         // Fill original handles to instances.
         self.original_handle_in_resource = original_handle;
@@ -580,89 +582,6 @@ impl Visit for Node {
     }
 }
 
-impl Reflect for Node {
-    fn source_path() -> &'static str {
-        file!()
-    }
-
-    fn derived_types() -> &'static [TypeId] {
-        &[]
-    }
-
-    fn query_derived_types(&self) -> &'static [TypeId] {
-        Self::derived_types()
-    }
-
-    fn type_name(&self) -> &'static str {
-        self.0.deref().type_name()
-    }
-
-    fn doc(&self) -> &'static str {
-        self.0.deref().doc()
-    }
-
-    fn assembly_name(&self) -> &'static str {
-        self.0.deref().assembly_name()
-    }
-
-    fn type_assembly_name() -> &'static str {
-        env!("CARGO_PKG_NAME")
-    }
-
-    fn fields_ref(&self, func: &mut dyn FnMut(&[FieldRef])) {
-        self.0.deref().fields_ref(func)
-    }
-
-    fn fields_mut(&mut self, func: &mut dyn FnMut(&mut [FieldMut])) {
-        self.0.deref_mut().fields_mut(func)
-    }
-
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        Reflect::into_any(self.0)
-    }
-
-    fn as_any(&self, func: &mut dyn FnMut(&dyn Any)) {
-        Reflect::as_any(self.0.deref(), func)
-    }
-
-    fn as_any_mut(&mut self, func: &mut dyn FnMut(&mut dyn Any)) {
-        Reflect::as_any_mut(self.0.deref_mut(), func)
-    }
-
-    fn as_reflect(&self, func: &mut dyn FnMut(&dyn Reflect)) {
-        self.0.deref().as_reflect(func)
-    }
-
-    fn as_reflect_mut(&mut self, func: &mut dyn FnMut(&mut dyn Reflect)) {
-        self.0.deref_mut().as_reflect_mut(func)
-    }
-
-    fn set(&mut self, value: Box<dyn Reflect>) -> Result<Box<dyn Reflect>, Box<dyn Reflect>> {
-        self.0.deref_mut().set(value)
-    }
-
-    fn set_field(
-        &mut self,
-        field: &str,
-        value: Box<dyn Reflect>,
-        func: &mut dyn FnMut(Result<Box<dyn Reflect>, SetFieldError>),
-    ) {
-        self.0.deref_mut().set_field(field, value, func)
-    }
-
-    fn field(&self, name: &str, func: &mut dyn FnMut(Option<&dyn Reflect>)) {
-        self.0.deref().field(name, func)
-    }
-
-    fn field_mut(&mut self, name: &str, func: &mut dyn FnMut(Option<&mut dyn Reflect>)) {
-        self.0.deref_mut().field_mut(name, func)
-    }
-
-    fn try_clone_box(&self) -> Option<Box<dyn Reflect>> {
-        Some(Box::new(self.clone()))
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::{
@@ -670,12 +589,11 @@ mod test {
         core::{
             algebra::{Matrix4, Vector3},
             futures::executor::block_on,
-            impl_component_provider,
             reflect::prelude::*,
             uuid::{uuid, Uuid},
             variable::InheritableVariable,
             visitor::{prelude::*, Visitor},
-            SafeLock, TypeUuidProvider,
+            SafeLock,
         },
         engine::{self, SerializationContext},
         resource::model::{Model, ModelResourceExtension},
@@ -696,18 +614,11 @@ mod test {
     use fyrox_resource::untyped::ResourceKind;
     use std::{fs, path::Path, sync::Arc};
 
-    #[derive(Debug, Clone, Reflect, Visit, Default)]
+    #[derive(Debug, Clone, PartialEq, Reflect, Visit, Default)]
+    #[reflect(type_uuid = "d3f66902-803f-4ace-8170-0aa485d98b40")]
     struct MyScript {
         some_field: InheritableVariable<String>,
         some_collection: InheritableVariable<Vec<u32>>,
-    }
-
-    impl_component_provider!(MyScript);
-
-    impl TypeUuidProvider for MyScript {
-        fn type_uuid() -> Uuid {
-            uuid!("d3f66902-803f-4ace-8170-0aa485d98b40")
-        }
     }
 
     impl ScriptTrait for MyScript {}

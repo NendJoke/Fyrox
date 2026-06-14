@@ -31,7 +31,8 @@ pub enum SegmentMessage {
 }
 impl MessageData for SegmentMessage {}
 
-#[derive(Debug, Clone, Reflect, Visit)]
+#[derive(Debug, Clone, Reflect, PartialEq, Visit)]
+#[reflect(type_uuid = "fda5a731-e927-40e5-9d96-e19104fbb63e")]
 pub struct Segment {
     pub source: Handle<UiNode>,
     pub source_pos: Vector2<f32>,

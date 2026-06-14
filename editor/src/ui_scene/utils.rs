@@ -18,12 +18,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use crate::fyrox::graph::SceneGraphNode;
+use crate::fyrox::graph::NodeWrapper;
 use crate::fyrox::{
     asset::manager::ResourceManager,
     core::{
         futures::executor::block_on, make_pretty_type_name, make_relative_path, pool::ErasedHandle,
-        pool::Handle, reflect::Reflect,
+        pool::Handle,
     },
     graph::SceneGraph,
     gui::{
@@ -110,7 +110,7 @@ impl WorldViewerDataProvider for UiSceneWorldViewerDataProvider<'_> {
             Cow::Owned(format!(
                 "{} [{}]",
                 n.name(),
-                make_pretty_type_name(Reflect::type_name(n))
+                make_pretty_type_name(n.inner_ref().type_info_ref().type_name)
             ))
         })
     }

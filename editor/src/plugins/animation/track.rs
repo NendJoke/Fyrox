@@ -31,12 +31,9 @@ use crate::{
             log::Log,
             math::curve::{CurveKey, CurveKeyKind},
             ok_or_continue,
-            parking_lot::Mutex,
             pool::{ErasedHandle, Handle},
             reflect::{prelude::*, Reflect},
             some_or_return,
-            type_traits::prelude::*,
-            uuid_provider,
             variable::InheritableVariable,
             visitor::prelude::*,
         },
@@ -47,7 +44,7 @@ use crate::{
             value::{ValueBinding, ValueType},
             Animation,
         },
-        graph::{SceneGraph, SceneGraphNode},
+        graph::{NodeWrapper, SceneGraph},
         graphics::DrawParameters,
         gui::{
             border::BorderBuilder,
@@ -105,12 +102,13 @@ use crate::{
     utils::{self},
 };
 use fyrox::core::warn;
+use fyrox::gui::widget::UserData;
 use std::{
     any::{Any, TypeId},
     cmp::Ordering,
     collections::hash_map::Entry,
     ops::{Deref, DerefMut},
-    sync::{mpsc::Sender, Arc},
+    sync::mpsc::Sender,
 };
 
 #[derive(PartialEq, Eq)]
@@ -348,10 +346,12 @@ pub enum TrackViewMessage {
 }
 impl MessageData for TrackViewMessage {}
 
-#[derive(Clone, Debug, Reflect, Visit, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Debug, PartialEq, Reflect, Visit)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "c1e930da-d55d-492e-b87b-16c1adf03319"
+)]
 struct TrackView {
-    #[component(include)]
     pub tree: Tree,
     id: Uuid,
     target: ErasedHandle,
@@ -373,8 +373,6 @@ impl DerefMut for TrackView {
         &mut self.tree.widget
     }
 }
-
-uuid_provider!(TrackView = "c1e930da-d55d-492e-b87b-16c1adf03319");
 
 impl Control for TrackView {
     fn on_remove(&self, sender: &Sender<UiMessage>) {
@@ -771,8 +769,8 @@ impl TrackList {
         graph: &G,
         sender: &MessageSender,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode<SceneGraph = G> + TransformProvider,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper<SceneGraph = G> + TransformProvider,
     {
         let nodes = if let Some(ui) = selection.as_ui() {
             ui.widgets
@@ -814,8 +812,8 @@ impl TrackList {
 
                     struct CurveKeyAdder<'a, G, N>
                     where
-                        G: SceneGraph<Node = N>,
-                        N: SceneGraphNode<SceneGraph = G> + TransformProvider,
+                        G: SceneGraph<NodeWrapper = N>,
+                        N: NodeWrapper<SceneGraph = G> + TransformProvider,
                     {
                         animation_player: Handle<N>,
                         animation_handle: Handle<Animation<Handle<N>>>,
@@ -826,8 +824,8 @@ impl TrackList {
 
                     impl<'a, G, N> CurveKeyAdder<'a, G, N>
                     where
-                        G: SceneGraph<Node = N>,
-                        N: SceneGraphNode<SceneGraph = G> + TransformProvider,
+                        G: SceneGraph<NodeWrapper = N>,
+                        N: NodeWrapper<SceneGraph = G> + TransformProvider,
                     {
                         fn add(&mut self, values: &[f32]) {
                             for (curve, current_value) in
@@ -868,40 +866,38 @@ impl TrackList {
                                 adder.add(values)
                             }
                         }
-                        ValueBinding::Property { name, .. } => node_ref.field(name, &mut |value| {
+                        ValueBinding::Property { name, .. } => node_ref.find_field(name, &mut |value| {
                             if let Some(value) = value {
-                                value.as_any(&mut |any| {
-                                    let curves = track.data_container().curves_ref();
-                                    if curves.len() == 1 {
-                                        if let Some(scalar) = any_scalar_to_f32(any) {
-                                            adder.add(&[scalar]);
-                                        } else {
-                                            err!("Unable to set {name} scalar property!");
-                                        }
-                                    } else if curves.len() == 2 {
-                                        if let Some(vec2) = any_vec_to_f32::<2>(any) {
-                                            adder.add(vec2.as_slice())
-                                        } else {
-                                            err!("Unable to set {name} Vector2 property!");
-                                        }
-                                    } else if curves.len() == 3 {
-                                        if let Some(vec3) = any_vec_to_f32::<3>(any) {
-                                            adder.add(vec3.as_slice())
-                                        } else {
-                                            err!("Unable to set {name} Vector3 property!");
-                                        }
-                                    } else if curves.len() == 4 {
-                                        if let Some(vec4) = any_vec_to_f32::<4>(any) {
-                                            adder.add(vec4.as_slice())
-                                        } else if let Some(quat) = any_quat_to_f32(any) {
-                                            adder.add(quat.coords.as_slice())
-                                        } else {
-                                            err!(
+                                let curves = track.data_container().curves_ref();
+                                if curves.len() == 1 {
+                                    if let Some(scalar) = any_scalar_to_f32(value) {
+                                        adder.add(&[scalar]);
+                                    } else {
+                                        err!("Unable to set {name} scalar property!");
+                                    }
+                                } else if curves.len() == 2 {
+                                    if let Some(vec2) = any_vec_to_f32::<2>(value) {
+                                        adder.add(vec2.as_slice())
+                                    } else {
+                                        err!("Unable to set {name} Vector2 property!");
+                                    }
+                                } else if curves.len() == 3 {
+                                    if let Some(vec3) = any_vec_to_f32::<3>(value) {
+                                        adder.add(vec3.as_slice())
+                                    } else {
+                                        err!("Unable to set {name} Vector3 property!");
+                                    }
+                                } else if curves.len() == 4 {
+                                    if let Some(vec4) = any_vec_to_f32::<4>(value) {
+                                        adder.add(vec4.as_slice())
+                                    } else if let Some(quat) = any_quat_to_f32(value) {
+                                        adder.add(quat.coords.as_slice())
+                                    } else {
+                                        err!(
                                                 "Unable to set {name} Vector4/Quaternion property!"
                                             );
-                                        }
                                     }
-                                })
+                                }
                             } else {
                                 err!("Unable to resolve property {name} when adding animation key!")
                             }
@@ -937,8 +933,8 @@ impl TrackList {
         ui: &mut UserInterface,
         graph: &G,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode<SceneGraph = G> + TransformProvider,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper<SceneGraph = G> + TransformProvider,
     {
         let selected_animation = animation_container_ref(graph, selection.animation_player)
             .and_then(|c| c.try_get(selection.animation).ok());
@@ -1000,8 +996,8 @@ impl TrackList {
         {
             let filter_text = text.to_lowercase();
             utils::apply_visibility_filter(self.tree_root.to_base(), ui, |node| {
-                if let Some(tree) = node.query_component::<Tree>() {
-                    if let Some(tree_text) = ui.node(tree.content).query_component::<Text>() {
+                if let Some(tree) = node.self_or_field_ref::<Tree>() {
+                    if let Some(tree_text) = ui.node(tree.content).self_or_field_ref::<Text>() {
                         return Some(tree_text.text().to_lowercase().contains(&filter_text));
                     }
                 }
@@ -1104,8 +1100,7 @@ impl TrackList {
                     for property_path in selected_properties {
                         node.resolve_path(&property_path.path, &mut |result| match result {
                             Ok(property) => {
-                                let mut property_type = TypeId::of::<u32>();
-                                property.as_any(&mut |any| property_type = any.type_id());
+                                let property_type = property.type_id();
 
                                 let types = type_id_to_supported_type(property_type);
 
@@ -1153,7 +1148,7 @@ impl TrackList {
                     .iter()
                     .filter_map(|s| {
                         let selected_widget = ui.node(s.to_base());
-                        if let Some(track_data) = selected_widget.query_component::<TrackView>() {
+                        if let Some(track_data) = selected_widget.self_or_field_ref::<TrackView>() {
                             Some(SelectedEntity::Track(track_data.id))
                         } else if let Some(curve_data) =
                             selected_widget.user_data_cloned::<CurveViewData>()
@@ -1251,7 +1246,7 @@ impl TrackList {
                 if let Some(animation) = selected_animation {
                     if let Some(track_view_ref) = ui
                         .node(message.destination())
-                        .query_component::<TrackView>()
+                        .self_or_field_ref::<TrackView>()
                     {
                         if animation.track_bindings().contains_key(&track_view_ref.id) {
                             sender.do_command(SetTrackEnabledCommand {
@@ -1274,15 +1269,14 @@ impl TrackList {
         ui: &mut UserInterface,
     ) -> Handle<PropertySelectorWindow>
     where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper,
     {
         let mut descriptors = Vec::new();
         if let Ok(node) = graph.try_get_node(node) {
-            node.as_reflect(&mut |node| {
-                descriptors = object_to_property_tree("", node, &mut |field: &FieldRef| {
-                    let type_id = field.value.field_value_as_reflect().type_id();
-                    type_id != TypeId::of::<TextureBytes>()
+            descriptors = object_to_property_tree("", node, &mut |field: &FieldRef| {
+                let type_id = field.value.type_id();
+                type_id != TypeId::of::<TextureBytes>()
                         // Vertex buffer cannot be animated (mainly because it contains untyped data).
                         && type_id != TypeId::of::<VertexBuffer>()
                         // Mesh topology cannot be animated.
@@ -1293,7 +1287,6 @@ impl TrackList {
                         // Do not allow animating prefab's content.
                         && type_id != TypeId::of::<ModelResource>()
                         && type_id != TypeId::of::<Resource<UserInterface>>()
-                });
             });
         }
 
@@ -1356,8 +1349,8 @@ impl TrackList {
         animation: &Animation<Handle<N>>,
         ui: &mut UserInterface,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper,
     {
         let Some(first_selected_track) = selection.first_selected_track() else {
             return;
@@ -1392,8 +1385,8 @@ impl TrackList {
         animation: &Animation<Handle<N>>,
         sender: &MessageSender,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper,
     {
         let Some(first_selected_track) = selection.first_selected_track() else {
             return;
@@ -1410,8 +1403,7 @@ impl TrackList {
 
         node.resolve_path(&desc.path, &mut |result| match result {
             Ok(property) => {
-                let mut property_type = TypeId::of::<u32>();
-                property.as_any(&mut |any| property_type = any.type_id());
+                let property_type = property.type_id();
 
                 let types = type_id_to_supported_type(property_type);
 
@@ -1448,8 +1440,8 @@ impl TrackList {
         selection: &AnimationSelection<N>,
         ui: &mut UserInterface,
     ) where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper,
     {
         let state = animation.tracks_data().state();
         let Some(tracks_data) = state.data_ref() else {
@@ -1568,9 +1560,9 @@ impl TrackList {
                                 };
 
                                 let curve_view = TreeBuilder::new(
-                                    WidgetBuilder::new().with_user_data(Arc::new(Mutex::new(
+                                    WidgetBuilder::new().with_user_data(UserData::new(
                                         CurveViewData { id: curve.id() },
-                                    ))),
+                                    )),
                                 )
                                 .with_content(
                                     GridBuilder::new(
@@ -1713,8 +1705,7 @@ impl TrackList {
                     {
                         target.resolve_path(name, &mut |result| match result {
                             Ok(value) => {
-                                let mut property_type = TypeId::of::<u32>();
-                                value.as_any(&mut |any| property_type = any.type_id());
+                                let property_type= value.type_id();
 
                                 if let Some((_, type_)) = type_id_to_supported_type(property_type) {
                                     if *value_type != type_ {

@@ -18,11 +18,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use crate::inspector::InspectorEnvironmentContainer;
 use crate::{
     button::{Button, ButtonMessage},
     core::{
-        color::Color, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        visitor::prelude::*, PhantomDataSendSync,
+        color::Color, pool::Handle, reflect::prelude::*, visitor::prelude::*, PhantomDataSendSync,
     },
     grid::{Column, GridBuilder, Row},
     inspector::{
@@ -32,7 +32,7 @@ use crate::{
             PropertyEditorMessageContext, PropertyEditorTranslationContext,
         },
         make_expander_container, make_property_margin, CollectionAction, FieldAction,
-        InspectorEnvironment, InspectorError, ObjectValue, PropertyChanged, PropertyFilter,
+        InspectorError, ObjectValue, PropertyChanged, PropertyFilter,
     },
     message::{DeliveryMode, MessageData, MessageDirection, UiMessage},
     resources,
@@ -52,17 +52,21 @@ use std::{
 };
 
 #[derive(Clone, Debug, PartialEq, Default, Visit, Reflect)]
+#[reflect(type_uuid = "88d3a376-37db-4dbb-bdaf-794f82970690")]
 pub struct Item {
     editor_instance: PropertyEditorInstance,
     remove: Handle<Button>,
 }
 
-pub trait CollectionItem: Clone + Reflect + Default + TypeUuidProvider + Send + 'static {}
+pub trait CollectionItem: Clone + PartialEq + Reflect + Default + Send + 'static {}
 
-impl<T> CollectionItem for T where T: Clone + Reflect + Default + TypeUuidProvider + Send + 'static {}
+impl<T> CollectionItem for T where T: Clone + PartialEq + Reflect + Default + Send + 'static {}
 
-#[derive(Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "316b0319-f8ee-4b63-9ed9-3f59a857e2bc"
+)]
 pub struct CollectionEditor<T: CollectionItem> {
     pub widget: Widget,
     pub add: Handle<Button>,
@@ -109,15 +113,6 @@ pub enum CollectionEditorMessage {
     ItemChanged { index: usize, message: UiMessage },
 }
 impl MessageData for CollectionEditorMessage {}
-
-impl<T: CollectionItem> TypeUuidProvider for CollectionEditor<T> {
-    fn type_uuid() -> Uuid {
-        combine_uuids(
-            uuid!("316b0319-f8ee-4b63-9ed9-3f59a857e2bc"),
-            T::type_uuid(),
-        )
-    }
-}
 
 impl<T: CollectionItem> Control for CollectionEditor<T> {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
@@ -183,7 +178,7 @@ where
 {
     widget_builder: WidgetBuilder,
     collection: Option<I>,
-    environment: Option<Arc<dyn InspectorEnvironment>>,
+    environment: Option<InspectorEnvironmentContainer>,
     definition_container: Option<Arc<PropertyEditorDefinitionContainer>>,
     add: Handle<Button>,
     layer_index: usize,
@@ -215,7 +210,7 @@ fn create_item_views(items: &[Item], ctx: &mut BuildContext) -> Vec<Handle<UiNod
 
 fn create_items<'a, 'b, T, I>(
     iter: I,
-    environment: Option<Arc<dyn InspectorEnvironment>>,
+    environment: Option<InspectorEnvironmentContainer>,
     definition_container: Arc<PropertyEditorDefinitionContainer>,
     property_info: &FieldRef<'a, 'b>,
     ctx: &mut BuildContext,
@@ -224,6 +219,7 @@ fn create_items<'a, 'b, T, I>(
     filter: PropertyFilter,
     immutable_collection: bool,
     name_column_width: f32,
+    hide_name_column: bool,
     base_path: String,
     has_parent_object: bool,
 ) -> Result<Vec<Item>, InspectorError>
@@ -266,6 +262,7 @@ where
                         generate_property_string_values,
                         filter: filter.clone(),
                         name_column_width,
+                        hide_name_column,
                         base_path: format!("{base_path}[{index}]"),
                         has_parent_object,
                     })?;
@@ -325,7 +322,7 @@ where
         self
     }
 
-    pub fn with_environment(mut self, environment: Option<Arc<dyn InspectorEnvironment>>) -> Self {
+    pub fn with_environment(mut self, environment: Option<InspectorEnvironmentContainer>) -> Self {
         self.environment = environment;
         self
     }
@@ -371,6 +368,7 @@ where
         ctx: &mut BuildContext,
         property_info: &FieldRef<'a, '_>,
         name_column_width: f32,
+        hide_name_column: bool,
         base_path: String,
         has_parent_object: bool,
     ) -> Result<Handle<CollectionEditor<T>>, InspectorError> {
@@ -391,6 +389,7 @@ where
                 self.filter,
                 self.immutable_collection,
                 name_column_width,
+                hide_name_column,
                 base_path,
                 has_parent_object,
             )?
@@ -502,12 +501,14 @@ where
                     ctx.build_context,
                     ctx.property_info,
                     ctx.name_column_width,
+                    ctx.hide_name_column,
                     ctx.base_path.clone(),
                     ctx.has_parent_object,
                 )?;
                 editor
             },
             ctx.name_column_width,
+            ctx.hide_name_column,
             ctx.build_context,
         );
 
@@ -531,6 +532,7 @@ where
             generate_property_string_values,
             filter,
             name_column_width,
+            hide_name_column,
             base_path,
             has_parent_object,
         } = ctx;
@@ -558,6 +560,7 @@ where
                 filter,
                 property_info.immutable_collection,
                 name_column_width,
+                hide_name_column,
                 base_path,
                 has_parent_object,
             )?;
@@ -607,6 +610,7 @@ where
                                 generate_property_string_values,
                                 filter: filter.clone(),
                                 name_column_width,
+                                hide_name_column,
                                 base_path: format!("{base_path}[{index}]"),
                                 has_parent_object,
                             })?

@@ -33,7 +33,6 @@ use crate::{
             math::Rect,
             pool::Handle,
             reflect::prelude::*,
-            type_traits::prelude::*,
             visitor::prelude::*,
             SafeLock,
         },
@@ -165,9 +164,12 @@ fn calc_slice_coord(position: f32, step: f32) -> usize {
 
 /// Displays a scrollable grid of till cells, with options to allow the tiles
 /// to be selected, dragged, and edits in various ways.
-#[derive(Clone, Visit, Reflect, TypeUuidProvider, ComponentProvider)]
-#[type_uuid(id = "5356a864-c026-4bd7-a4b1-30bacf77d8fa")]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Visit, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "5356a864-c026-4bd7-a4b1-30bacf77d8fa",
+    non_comparable
+)]
 pub struct PaletteWidget {
     widget: Widget,
     #[visit(skip)]
@@ -279,7 +281,7 @@ impl Debug for PaletteWidget {
 
 type PaletteTriangleData = (Vec<Point2<f32>>, Vec<[u32; 3]>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 struct ColliderHighlight {
     position: Vector2<i32>,
     color: Color,

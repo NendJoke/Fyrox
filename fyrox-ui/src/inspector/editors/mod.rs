@@ -21,6 +21,7 @@
 //! A collection of [PropertyEditorDefinition] objects for a wide variety of types,
 //! including standard Rust types and Fyrox core types.
 
+use crate::inspector::InspectorEnvironmentContainer;
 use crate::style::{StyleProperty, StylePropertyContainer};
 use crate::{
     absm::{EventAction, EventKind},
@@ -80,7 +81,7 @@ use crate::{
                 Vec4PropertyEditorDefinition,
             },
         },
-        InspectorEnvironment, InspectorError, PropertyChanged, PropertyFilter,
+        InspectorError, PropertyChanged, PropertyFilter,
     },
     key::{HotKeyEditor, KeyBinding, KeyBindingEditor},
     list_view::{ListView, ListViewItem},
@@ -166,7 +167,7 @@ pub struct PropertyEditorBuildContext<'a, 'b, 'c, 'd> {
     /// [fyroxed_base::inspector::EditorEnvironment](https://docs.rs/fyroxed_base/latest/fyroxed_base/inspector/struct.EditorEnvironment.html)
     /// when the Inspector is being used in Fyroxed, but Inspector widgets can be used in other applications,
     /// and we can access those applications by casting the environment to the appropriate type.
-    pub environment: Option<Arc<dyn InspectorEnvironment>>,
+    pub environment: Option<InspectorEnvironmentContainer>,
     /// The list of the Inspectors property editors.
     /// This allows one property editor to make use of other property editors.
     pub definition_container: Arc<PropertyEditorDefinitionContainer>,
@@ -183,6 +184,7 @@ pub struct PropertyEditorBuildContext<'a, 'b, 'c, 'd> {
     pub filter: PropertyFilter,
     /// Width of the property name column.
     pub name_column_width: f32,
+    pub hide_name_column: bool,
     pub base_path: String,
     /// A flag, that defines whether the inspectable object has a parent object from which it can
     /// obtain initial property values when clicking on the "Revert" button. This flag is used only for
@@ -214,7 +216,7 @@ pub struct PropertyEditorMessageContext<'a, 'b, 'c> {
     /// this property is being translated. This allows the created message to
     /// adapt to the situation if we can successfully cast the given
     /// [InspectorEnvironment] into a specific type.
-    pub environment: Option<Arc<dyn InspectorEnvironment>>,
+    pub environment: Option<InspectorEnvironmentContainer>,
     /// When true, this indicates that an Inspector should generate strings from `format!("{:?}", field)`, for each field.
     /// Having this in the property editor build context indicates how any Inspectors that are update due to the created message
     /// should behave.
@@ -223,6 +225,7 @@ pub struct PropertyEditorMessageContext<'a, 'b, 'c> {
     pub filter: PropertyFilter,
     /// Width of the property name column.
     pub name_column_width: f32,
+    pub hide_name_column: bool,
     pub base_path: String,
     /// A flag, that defines whether the inspectable object has a parent object from which it can
     /// obtain initial property values when clicking on the "Revert" button. This flag is used only for
@@ -249,7 +252,7 @@ pub struct PropertyEditorTranslationContext<'b, 'c> {
     /// [fyrox::script::Script](https://docs.rs/fyrox/latest/fyrox/script/struct.Script.html)
     /// when it receives a
     /// [ScriptPropertyEditorMessage::Value](https://docs.rs/fyroxed_base/latest/fyroxed_base/inspector/editors/script/enum.ScriptPropertyEditorMessage.html#variant.Value).
-    pub environment: Option<Arc<dyn InspectorEnvironment>>,
+    pub environment: Option<InspectorEnvironmentContainer>,
     /// The name of the property being edited.
     /// This comes from [ContextEntry::property_name](crate::inspector::ContextEntry).
     pub name: &'b str,
@@ -263,6 +266,7 @@ pub struct PropertyEditorTranslationContext<'b, 'c> {
 /// A widget handle that is to act as an editor in an [Inspector](crate::inspector::Inspector), with or without
 /// a custom container widget to show the name of the property that is being edited.
 #[derive(Clone, Debug, PartialEq, Visit, Reflect)]
+#[reflect(type_uuid = "b5ab90da-6934-46e5-9fb2-5225c101c4fa")]
 pub enum PropertyEditorInstance {
     /// A property editor that is to be given a default container, which is just a label to the left
     /// of the editor to show the name of the property being edited.
@@ -367,6 +371,18 @@ pub struct PropertyEditorDefinitionContainer {
     /// that plugin.
     pub context_type_id: Mutex<TypeId>,
     definitions: RwLock<FxHashMap<TypeId, PropertyEditorDefinitionContainerEntry>>,
+}
+
+impl PartialEq for PropertyEditorDefinitionContainer {
+    fn eq(&self, other: &Self) -> bool {
+        *self.context_type_id.safe_lock() == *other.context_type_id.safe_lock()
+            && self
+                .definitions
+                .read()
+                .keys()
+                .zip(other.definitions.read().keys())
+                .all(|(a, b)| *a == *b)
+    }
 }
 
 impl Debug for PropertyEditorDefinitionContainer {
@@ -806,13 +822,22 @@ impl PropertyEditorDefinitionContainer {
     /// Panic if these types already have editor definitions.
     pub fn register_inheritable_vec_collection<T>(&self)
     where
-        T: CollectionItem + FieldValue,
+        T: CollectionItem + PartialEq,
     {
         assert!(self
             .insert(VecCollectionPropertyEditorDefinition::<T>::new())
             .is_none());
         assert!(self
             .insert(InheritablePropertyEditorDefinition::<Vec<T>>::new())
+            .is_none());
+    }
+
+    pub fn register_vec_collection<T>(&self)
+    where
+        T: CollectionItem,
+    {
+        assert!(self
+            .insert(VecCollectionPropertyEditorDefinition::<T>::new())
             .is_none());
     }
 
@@ -826,7 +851,7 @@ impl PropertyEditorDefinitionContainer {
     /// Panic if these types already have editor definitions.
     pub fn register_inheritable_inspectable<T>(&self)
     where
-        T: Reflect + FieldValue,
+        T: Reflect + Clone + PartialEq,
     {
         assert!(self
             .insert(InspectablePropertyEditorDefinition::<T>::new())
@@ -836,9 +861,18 @@ impl PropertyEditorDefinitionContainer {
             .is_none());
     }
 
+    pub fn register_inspectable<T>(&self)
+    where
+        T: Reflect,
+    {
+        assert!(self
+            .insert(InspectablePropertyEditorDefinition::<T>::new())
+            .is_none());
+    }
+
     pub fn register_inheritable_styleable_inspectable<T>(&self)
     where
-        T: Reflect + FieldValue + Clone + PartialEq,
+        T: Reflect + Clone + PartialEq,
     {
         assert!(self
             .insert(InspectablePropertyEditorDefinition::<T>::new())
@@ -860,7 +894,7 @@ impl PropertyEditorDefinitionContainer {
     /// Panic if these types already have editor definitions.
     pub fn register_inheritable_enum<T, E: Debug>(&self)
     where
-        T: InspectableEnum + FieldValue + VariantNames + AsRef<str> + FromStr<Err = E> + Debug,
+        T: InspectableEnum + VariantNames + AsRef<str> + FromStr<Err = E> + Debug + PartialEq,
     {
         assert!(self
             .insert(EnumPropertyEditorDefinition::<T>::new())
@@ -870,15 +904,18 @@ impl PropertyEditorDefinitionContainer {
             .is_none());
     }
 
+    pub fn register_enum<T, E: Debug>(&self)
+    where
+        T: InspectableEnum + VariantNames + AsRef<str> + FromStr<Err = E> + Debug,
+    {
+        assert!(self
+            .insert(EnumPropertyEditorDefinition::<T>::new())
+            .is_none());
+    }
+
     pub fn register_inheritable_styleable_enum<T, E: Debug>(&self)
     where
-        T: InspectableEnum
-            + FieldValue
-            + VariantNames
-            + AsRef<str>
-            + FromStr<Err = E>
-            + Debug
-            + PartialEq,
+        T: InspectableEnum + VariantNames + AsRef<str> + FromStr<Err = E> + Debug + PartialEq,
     {
         assert!(self
             .insert(EnumPropertyEditorDefinition::<T>::new())
@@ -900,7 +937,7 @@ impl PropertyEditorDefinitionContainer {
     /// Panic if these types already have editor definitions.
     pub fn register_inheritable_option<T>(&self)
     where
-        T: InspectableEnum + FieldValue + Default,
+        T: InspectableEnum + Default + PartialEq,
     {
         assert!(self
             .insert(EnumPropertyEditorDefinition::<T>::new_optional())

@@ -28,7 +28,7 @@ use crate::{
 };
 use fyrox_core::err;
 use fyrox_core::pool::ObjectOrVariant;
-use fyrox_graph::{SceneGraph, SceneGraphNode};
+use fyrox_graph::{NodeWrapper, SceneGraph};
 use uuid::Uuid;
 
 pub trait UserInterfaceTestingExtension {
@@ -122,7 +122,7 @@ impl UserInterfaceTestingExtension for UserInterface {
             assert!(is_enabled(start_handle, self));
             assert!(start_node.is_globally_visible());
             if let Some((text_handle, text_node)) = self.find(start_handle, &mut |n| {
-                if let Some(text_widget) = n.component_ref::<Text>() {
+                if let Some(text_widget) = n.self_or_field_ref::<Text>() {
                     text_widget.text() == text
                 } else {
                     false
@@ -169,7 +169,7 @@ impl UserInterfaceTestingExtension for UserInterface {
         while let Some(msg) = self.poll_message() {
             if self.visual_debug {
                 if let Ok(widget) = self.try_get(msg.destination()) {
-                    let ty = Reflect::type_name(widget);
+                    let ty = widget.type_info_ref().type_name;
                     info!("[{ty}]{msg:?}");
                 }
             }
@@ -183,7 +183,7 @@ impl UserInterfaceTestingExtension for UserInterface {
         while let Some(msg) = self.poll_message() {
             if self.visual_debug {
                 if let Ok(widget) = self.try_get(msg.destination()) {
-                    let ty = Reflect::type_name(widget);
+                    let ty = widget.type_info_ref().type_name;
                     info!("[{ty}]{msg:?}");
                 }
             }

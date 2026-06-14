@@ -31,7 +31,6 @@ use crate::{
         num_traits::{clamp, Bounded, NumAssign, NumCast, NumOps},
         pool::Handle,
         reflect::{prelude::*, Reflect},
-        type_traits::prelude::*,
         visitor::prelude::*,
     },
     decorator::DecoratorBuilder,
@@ -66,6 +65,7 @@ pub trait NumericType:
     + Copy
     + NumOps
     + PartialOrd
+    + PartialEq
     + Display
     + Bounded
     + Debug
@@ -75,7 +75,6 @@ pub trait NumericType:
     + Default
     + Reflect
     + Visit
-    + TypeUuidProvider
     + 'static
 {
 }
@@ -87,6 +86,7 @@ impl<T> NumericType for T where
         + Copy
         + NumOps
         + PartialOrd
+        + PartialEq
         + Bounded
         + Display
         + Debug
@@ -96,7 +96,6 @@ impl<T> NumericType for T where
         + Default
         + Reflect
         + Visit
-        + TypeUuidProvider
         + 'static
 {
 }
@@ -124,7 +123,7 @@ pub enum NumericUpDownMessage<T: NumericType> {
 impl<T: NumericType> MessageData for NumericUpDownMessage<T> {}
 
 /// Used to store drag info when dragging the cursor on the up/down buttons.
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum DragContext<T: NumericType> {
     /// Dragging is just started.
     PreDrag {
@@ -236,8 +235,11 @@ pub enum DragContext<T: NumericType> {
 ///         .build(ctx)
 /// }
 /// ```
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "f852eda4-18e5-4480-83ae-a607ce1c26f7"
+)]
 pub struct NumericUpDown<T: NumericType> {
     /// Base widget of the [`NumericUpDown`] widget.
     pub widget: Widget,
@@ -395,18 +397,6 @@ fn calculate_value_by_offset<T: NumericType>(
     }
     new_value = clamp(new_value, min, max);
     new_value
-}
-
-impl<T> TypeUuidProvider for NumericUpDown<T>
-where
-    T: NumericType,
-{
-    fn type_uuid() -> Uuid {
-        combine_uuids(
-            uuid!("f852eda4-18e5-4480-83ae-a607ce1c26f7"),
-            T::type_uuid(),
-        )
-    }
 }
 
 impl<T: NumericType> Control for NumericUpDown<T> {

@@ -28,8 +28,8 @@ use crate::window::WindowAlignment;
 use crate::{
     button::{ButtonBuilder, ButtonMessage},
     core::{
-        pool::Handle, reflect::prelude::*, reflect::FieldValue, type_traits::prelude::*,
-        visitor::prelude::*, ImmutableString, PhantomDataSendSync,
+        pool::Handle, reflect::prelude::*, visitor::prelude::*, ImmutableString,
+        PhantomDataSendSync,
     },
     define_widget_deref,
     draw::DrawingContext,
@@ -77,8 +77,8 @@ pub enum StyledPropertyEditorMessage {
 }
 impl MessageData for StyledPropertyEditorMessage {}
 
-#[derive(Debug, Clone, Visit, Reflect, ComponentProvider, TypeUuidProvider)]
-#[type_uuid(id = "3a863a0f-7414-44f5-a7aa-7a6668a6d406")]
+#[derive(Debug, Clone, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "3a863a0f-7414-44f5-a7aa-7a6668a6d406")]
 #[reflect(derived_type = "UiNode")]
 pub struct StyledPropertySelector {
     window: Window,
@@ -308,8 +308,8 @@ impl StyledPropertySelectorBuilder {
     }
 }
 
-#[derive(Debug, Clone, Visit, Reflect, ComponentProvider, TypeUuidProvider)]
-#[type_uuid(id = "1b8fb74a-3911-4b44-bb71-1a0382ebb9a7")]
+#[derive(Debug, Clone, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "1b8fb74a-3911-4b44-bb71-1a0382ebb9a7")]
 #[reflect(derived_type = "UiNode")]
 pub struct StyledPropertyEditor {
     widget: Widget,
@@ -474,7 +474,7 @@ impl StyledPropertyEditorBuilder {
 
 pub struct StyledPropertyEditorDefinition<T>
 where
-    T: FieldValue,
+    T: Reflect + Clone,
 {
     #[allow(dead_code)]
     phantom: PhantomDataSendSync<T>,
@@ -482,7 +482,7 @@ where
 
 impl<T> StyledPropertyEditorDefinition<T>
 where
-    T: FieldValue,
+    T: Reflect + Clone,
 {
     pub fn new() -> Self {
         Self {
@@ -493,7 +493,7 @@ where
 
 impl<T> Debug for StyledPropertyEditorDefinition<T>
 where
-    T: Reflect + FieldValue,
+    T: Reflect + Clone,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "StyledPropertyEditorDefinition")
@@ -502,7 +502,7 @@ where
 
 impl<T> PropertyEditorDefinition for StyledPropertyEditorDefinition<T>
 where
-    T: Reflect + FieldValue,
+    T: Reflect + Clone + PartialEq,
 {
     fn value_type_id(&self) -> TypeId {
         TypeId::of::<StyledProperty<T>>()
@@ -548,7 +548,8 @@ where
                         generate_property_string_values: ctx.generate_property_string_values,
                         filter: ctx.filter,
                         name_column_width: ctx.name_column_width,
-                        base_path: ctx.base_path.clone(),
+                        hide_name_column: ctx.hide_name_column,
+                        base_path: format!("{}.{}", ctx.base_path, StyledProperty::<T>::PROPERTY),
                         has_parent_object: ctx.has_parent_object,
                     })?;
 
@@ -563,8 +564,8 @@ where
                 })
                 .with_target_type_id(TypeId::of::<T>())
                 .with_style_resource(ctx.environment.as_ref().and_then(|env| {
-                    (&**env as &dyn ComponentProvider)
-                        .component_ref::<Option<StyleResource>>()
+                    (&**env as &dyn Reflect)
+                        .first_field_ref::<Option<StyleResource>>()
                         .cloned()
                         .flatten()
                 }))
@@ -633,6 +634,7 @@ where
                     generate_property_string_values: ctx.generate_property_string_values,
                     filter: ctx.filter,
                     name_column_width: ctx.name_column_width,
+                    hide_name_column: ctx.hide_name_column,
                     base_path: ctx.base_path.clone(),
                     has_parent_object: ctx.has_parent_object,
                 });

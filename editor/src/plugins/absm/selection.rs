@@ -30,7 +30,7 @@ use crate::{
         engine::Engine,
         generic_animation::machine::Machine,
         generic_animation::machine::{PoseNode, State, Transition},
-        graph::{SceneGraph, SceneGraphNode},
+        graph::{NodeWrapper, SceneGraph},
         gui::inspector::PropertyChanged,
         scene::SceneContainer,
     },
@@ -144,12 +144,12 @@ pub fn get_machine_ref<'a, N: Reflect>(
         scene_container[game_scene.scene]
             .graph
             .node(ErasedHandle::from(node_handle).into())
-            .component_ref::<InheritableVariable<Machine<Handle<N>>>>()
+            .self_or_field_ref::<InheritableVariable<Machine<Handle<N>>>>()
             .map(|v| v.deref())
     } else if let Some(ui) = controller.downcast_ref::<UiScene>() {
         ui.ui
             .node(ErasedHandle::from(node_handle).into())
-            .component_ref::<InheritableVariable<Machine<Handle<N>>>>()
+            .self_or_field_ref::<InheritableVariable<Machine<Handle<N>>>>()
             .map(|v| v.deref())
     } else {
         None

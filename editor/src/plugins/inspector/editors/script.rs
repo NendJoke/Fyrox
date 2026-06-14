@@ -19,10 +19,7 @@
 // SOFTWARE.
 
 use crate::fyrox::{
-    core::{
-        log::Log, parking_lot::Mutex, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        uuid_provider, visitor::prelude::*,
-    },
+    core::{log::Log, pool::Handle, reflect::prelude::*, visitor::prelude::*},
     engine::SerializationContext,
     graph::SceneGraph,
     gui::{
@@ -36,8 +33,7 @@ use crate::fyrox::{
                 PropertyEditorMessageContext, PropertyEditorTranslationContext,
             },
             make_expander_container, FieldAction, Inspector, InspectorBuilder, InspectorContext,
-            InspectorEnvironment, InspectorError, InspectorMessage, PropertyChanged,
-            PropertyFilter,
+            InspectorError, InspectorMessage, PropertyChanged, PropertyFilter,
         },
         message::{MessageDirection, UiMessage},
         text::TextBuilder,
@@ -54,9 +50,10 @@ use crate::{
 };
 
 use fyrox::gui::button::Button;
-use fyrox::gui::inspector::InspectorContextArgs;
+use fyrox::gui::inspector::{InspectorContextArgs, InspectorEnvironmentContainer};
 use fyrox::gui::message::MessageData;
 use fyrox::gui::utils::make_dropdown_list_option;
+use fyrox::gui::widget::UserData;
 use fyrox::gui::{Thickness, VerticalAlignment};
 use std::{
     any::TypeId,
@@ -72,8 +69,11 @@ pub enum ScriptPropertyEditorMessage {
 }
 impl MessageData for ScriptPropertyEditorMessage {}
 
-#[derive(Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "f43c3bfb-8b39-4cc0-be77-04141a45822e"
+)]
 pub struct ScriptPropertyEditor {
     widget: Widget,
     inspector: Handle<Inspector>,
@@ -96,8 +96,6 @@ impl DerefMut for ScriptPropertyEditor {
         &mut self.widget
     }
 }
-
-uuid_provider!(ScriptPropertyEditor = "f43c3bfb-8b39-4cc0-be77-04141a45822e");
 
 impl Control for ScriptPropertyEditor {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
@@ -218,7 +216,7 @@ impl ScriptPropertyEditorBuilder {
         open_in_ide_button: Handle<Button>,
         variant_selector: Handle<UiNode>,
         script_uuid: Option<Uuid>,
-        environment: Option<Arc<dyn InspectorEnvironment>>,
+        environment: Option<InspectorEnvironmentContainer>,
         layer_index: usize,
         generate_property_string_values: bool,
         filter: PropertyFilter,
@@ -238,6 +236,7 @@ impl ScriptPropertyEditorBuilder {
                 generate_property_string_values,
                 filter,
                 name_column_width,
+                hide_name_column: false,
                 base_path: Default::default(),
                 has_parent_object,
             })
@@ -268,10 +267,7 @@ fn create_items(
 ) -> Vec<Handle<UiNode>> {
     let mut items = vec![{
         let empty = make_dropdown_list_option(ctx, "<No Script>");
-        ctx[empty].user_data = Some(Arc::new(Mutex::new((
-            Uuid::default(),
-            Option::<String>::None,
-        ))));
+        ctx[empty].user_data = Some(UserData::new((Uuid::default(), Option::<String>::None)));
         empty
     }];
 
@@ -279,10 +275,10 @@ fn create_items(
         |(type_uuid, constructor)| {
             let item = make_dropdown_list_option(ctx, &constructor.name);
 
-            ctx[item].user_data = Some(Arc::new(Mutex::new((
+            ctx[item].user_data = Some(UserData::new((
                 *type_uuid,
                 Some(constructor.source_path.to_string()),
-            ))));
+            )));
 
             item
         },
@@ -383,6 +379,7 @@ impl PropertyEditorDefinition for ScriptPropertyEditorDefinition {
                 editor
             },
             ctx.name_column_width,
+            ctx.hide_name_column,
             ctx.build_context,
         );
 
@@ -460,6 +457,7 @@ impl PropertyEditorDefinition for ScriptPropertyEditorDefinition {
                         generate_property_string_values: ctx.generate_property_string_values,
                         filter: ctx.filter,
                         name_column_width: ctx.name_column_width,
+                        hide_name_column: false,
                         base_path: Default::default(),
                         has_parent_object: ctx.has_parent_object,
                     })

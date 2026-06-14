@@ -67,7 +67,7 @@ impl SelectionContainer for NavmeshSelection {
         let scene = &scenes[game_scene.scene];
         let node = scene.graph.try_get_node(self.navmesh_node).unwrap();
         (callback)(EntityInfo {
-            entity: node as &dyn Reflect,
+            entity: node,
             has_inheritance_parent: node.has_inheritance_parent(),
             read_only: false,
         });
@@ -115,7 +115,12 @@ impl SelectionContainer for NavmeshSelection {
     fn provide_docs(&self, controller: &dyn SceneController, engine: &Engine) -> Option<String> {
         let game_scene = controller.downcast_ref::<GameScene>()?;
         let scene = &engine.scenes[game_scene.scene];
-        Some(scene.graph[self.navmesh_node()].doc().to_string())
+        Some(
+            scene.graph[self.navmesh_node()]
+                .type_info_ref()
+                .doc_comment
+                .to_string(),
+        )
     }
 }
 

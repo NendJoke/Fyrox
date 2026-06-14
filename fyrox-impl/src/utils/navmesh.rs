@@ -76,6 +76,7 @@ impl VertexDataProvider for Vertex {}
 
 /// See module docs.
 #[derive(Clone, Debug, Default, Reflect)]
+#[reflect(type_uuid = "5bc7c49c-2dc4-4f67-916c-1d9affd755ef")]
 #[reflect(hide_all)]
 pub struct Navmesh {
     octree: Octree,
@@ -636,7 +637,7 @@ impl Navmesh {
 
 /// Navmesh agent is a "pathfinding unit" that performs navigation on a mesh. It is designed to
 /// cover most of simple use cases when you need to build and follow some path from point A to point B.
-#[derive(Visit, Clone, Debug)]
+#[derive(Visit, PartialEq, Clone, Debug)]
 #[visit(optional)]
 pub struct NavmeshAgent {
     path: Vec<Vector3<f32>>,

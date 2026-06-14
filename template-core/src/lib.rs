@@ -175,7 +175,7 @@ use fyrox::{
 pub use fyrox;
 
 #[derive(Default, Visit, Reflect, Debug)]
-#[reflect(non_cloneable)]
+#[reflect(non_cloneable, non_comparable, type_uuid = "84a89ed3-796e-4592-92d6-d24c2db302c9")]
 pub struct Game { }
 
 impl Plugin for Game {
@@ -714,13 +714,13 @@ pub fn init_script(root_path: &Path, raw_name: &str) -> Result<(), String> {
 #[allow(unused_imports)]
 use fyrox::graph::prelude::*;
 use fyrox::{{
-    core::{{visitor::prelude::*, reflect::prelude::*, type_traits::prelude::*}},
+    core::{{visitor::prelude::*, reflect::prelude::*}},
     event::Event, script::{{ScriptContext, ScriptDeinitContext, ScriptTrait}},
     plugin::error::GameResult
 }};
 
-#[derive(Visit, Reflect, Default, Debug, Clone, TypeUuidProvider, ComponentProvider)]
-#[type_uuid(id = "{script_uuid}")]
+#[derive(Visit, Reflect, Default, Debug, PartialEq, Clone)]
+#[reflect(type_uuid = "{script_uuid}")]
 #[visit(optional)]
 pub struct {script_name} {{
     // Add fields here.

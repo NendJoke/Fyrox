@@ -104,7 +104,7 @@ impl TaskPoolHandler {
     /// # use std::{fs::File, io::Read};
     ///
     /// #[derive(Visit, Reflect, Debug)]
-    /// #[reflect(non_cloneable)]
+    /// #[reflect(non_cloneable, type_uuid = "a7ba17c1-6104-4938-9ba7-ba479acf716a")]
     /// struct MyGame {
     ///     data: Option<Vec<u8>>,
     /// }
@@ -174,18 +174,16 @@ impl TaskPoolHandler {
     ///
     /// ```rust ,no_run
     /// # use fyrox_impl::{
-    /// #     core::{reflect::prelude::*, uuid::Uuid, visitor::prelude::*, impl_component_provider},
+    /// #     core::{reflect::prelude::*, uuid::Uuid, visitor::prelude::*},
     /// #     resource::model::{Model, ModelResourceExtension},
     /// #     script::{ScriptContext, ScriptTrait},
     /// # };
-    /// # use fyrox_core::uuid_provider;
+    /// #
     /// # use fyrox_impl::plugin::error::GameResult;
     /// #
     /// #[derive(Reflect, Visit, Default, Debug, Clone)]
+    /// #[reflect(type_uuid = "f5ded79e-6101-4e23-b20d-48cbdb25d87a")]
     /// struct MyScript;
-    ///
-    /// # impl_component_provider!(MyScript);
-    /// # uuid_provider!(MyScript = "f5ded79e-6101-4e23-b20d-48cbdb25d87a");
     ///
     /// impl ScriptTrait for MyScript {
     ///     fn on_start(&mut self, ctx: &mut ScriptContext) -> GameResult {

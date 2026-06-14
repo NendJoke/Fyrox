@@ -51,7 +51,6 @@ use crate::{
         math::{aabb::AxisAlignedBoundingBox, Matrix4Ext},
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
         uuid::{uuid, Uuid},
         variable::InheritableVariable,
         visitor::{Visit, VisitResult, Visitor},
@@ -70,10 +69,12 @@ use fyrox_graph::SceneGraph;
 use std::ops::{Deref, DerefMut};
 
 /// See module docs.
-#[derive(Debug, Reflect, Clone, Visit, ComponentProvider)]
-#[reflect(derived_type = "Node")]
+#[derive(Debug, PartialEq, Reflect, Clone, Visit)]
+#[reflect(
+    derived_type = "Node",
+    type_uuid = "9856a3c1-ced7-47ec-b682-4dc4dea89d8f"
+)]
 pub struct SpotLight {
-    #[component(include)]
     base_light: BaseLight,
 
     #[reflect(min_value = 0.0, max_value = 3.14159, step = 0.1)]
@@ -120,12 +121,6 @@ impl Default for SpotLight {
             distance: InheritableVariable::new_modified(10.0),
             cookie_texture: InheritableVariable::new_modified(None),
         }
-    }
-}
-
-impl TypeUuidProvider for SpotLight {
-    fn type_uuid() -> Uuid {
-        uuid!("9856a3c1-ced7-47ec-b682-4dc4dea89d8f")
     }
 }
 
@@ -249,7 +244,7 @@ impl NodeTrait for SpotLight {
     }
 
     fn id(&self) -> Uuid {
-        Self::type_uuid()
+        <Self as Reflect>::type_info().type_uuid
     }
 
     fn debug_draw(&self, ctx: &mut SceneDrawingContext) {

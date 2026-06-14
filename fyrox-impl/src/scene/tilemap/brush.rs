@@ -43,7 +43,6 @@ use crate::{
         color::Color,
         io::FileError,
         reflect::prelude::*,
-        type_traits::prelude::*,
         visitor::prelude::*,
     },
     scene::debug::SceneDrawingContext,
@@ -99,7 +98,8 @@ impl From<VisitError> for TileMapBrushResourceError {
 /// of tile map macros. The meaning of the data is determined by matching the UUID
 /// with the UUID of some macro or other user, and it is up to the user to determine
 /// the type of the resource.
-#[derive(Debug, Clone, Default, Reflect)]
+#[derive(Debug, Clone, Default, PartialEq, Reflect)]
+#[reflect(type_uuid = "a3427eef-8d8e-4573-a328-ab06e1d56e25")]
 pub struct BrushMacroInstanceList(Vec<BrushMacroData>);
 
 impl BrushMacroInstanceList {
@@ -159,7 +159,8 @@ impl Visit for BrushMacroInstanceList {
 
 /// A brush can have zero or more instances of a macro, and each instance
 /// has its own configuration data.
-#[derive(Debug, Default, Clone, Visit, Reflect)]
+#[derive(Debug, Default, Clone, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "3aa87ac2-c05f-4e9b-86eb-ee846a364585")]
 pub struct BrushMacroData {
     /// The UUID of the macro that owns this instance data.
     /// This is used to identify the macro that knows the type of this data.
@@ -177,7 +178,8 @@ pub struct BrushMacroData {
 
 /// A page of tiles within a brush. Having multiple pages allows a brush to be optimized
 /// for use in multiple contexts.
-#[derive(Default, Debug, Clone, Visit, Reflect)]
+#[derive(Default, Debug, Clone, PartialEq, Visit, Reflect)]
+#[reflect(type_uuid = "1e3de522-678b-4922-b959-76a6045de788")]
 pub struct TileMapBrushPage {
     /// The tile that represents this page in the editor
     pub icon: TileDefinitionHandle,
@@ -240,8 +242,8 @@ fn draw_tile_outline(
 
 /// Tile map brush is a set of tiles arranged in arbitrary shape, that can be used to draw on a tile
 /// map.
-#[derive(Default, Debug, Clone, Visit, Reflect, TypeUuidProvider)]
-#[type_uuid(id = "23ed39da-cb01-4181-a058-94dc77ecb4b2")]
+#[derive(Default, Debug, Clone, PartialEq, Visit, Reflect)]
+#[reflect(type_uuid = "23ed39da-cb01-4181-a058-94dc77ecb4b2")]
 pub struct TileMapBrush {
     /// The tile set used by this brush. This must match the tile set of any tile map that this
     /// brush is used to edit.
@@ -557,10 +559,6 @@ impl TileMapBrush {
 }
 
 impl ResourceData for TileMapBrush {
-    fn type_uuid(&self) -> Uuid {
-        <Self as TypeUuidProvider>::type_uuid()
-    }
-
     fn save(&mut self, path: &Path) -> Result<(), Box<dyn Error>> {
         self.save(path)
     }
@@ -590,7 +588,7 @@ impl ResourceLoader for TileMapBrushLoader {
     }
 
     fn data_type_uuid(&self) -> Uuid {
-        <TileMapBrush as TypeUuidProvider>::type_uuid()
+        <TileMapBrush as Reflect>::type_info().type_uuid
     }
 
     fn load(&self, path: PathBuf, io: Arc<dyn ResourceIo>) -> BoxedLoaderFuture {

@@ -33,8 +33,6 @@ use crate::{
         pool::Handle,
         reflect::prelude::*,
         some_or_return,
-        type_traits::prelude::*,
-        uuid_provider,
         variable::InheritableVariable,
         visitor::prelude::*,
         SafeLock,
@@ -52,6 +50,7 @@ use crate::{
 };
 use copypasta::ClipboardProvider;
 use fyrox_graph::constructor::{ConstructorProvider, GraphNodeConstructor};
+use std::ops::Deref;
 use std::{
     cell::RefCell,
     fmt::{Debug, Formatter},
@@ -119,10 +118,9 @@ pub use crate::formatted_text::Position;
     AsRefStr,
     EnumString,
     VariantNames,
-    TypeUuidProvider,
 )]
 #[repr(u32)]
-#[type_uuid(id = "5fb7d6f0-c151-4a30-8350-2060749d74c6")]
+#[reflect(type_uuid = "5fb7d6f0-c151-4a30-8350-2060749d74c6")]
 pub enum TextCommitMode {
     /// Text box will immediately send [`TextMessage::Text`] message after any change (after any pressed button).
     Immediate = 0,
@@ -149,8 +147,8 @@ pub enum TextCommitMode {
 }
 
 /// Defines a set of two positions in the text, that forms a specific range.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Visit, Reflect, Default, TypeUuidProvider)]
-#[type_uuid(id = "04c8101b-cb34-47a5-af34-ecfb9b2fc426")]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Visit, Reflect, Default)]
+#[reflect(type_uuid = "04c8101b-cb34-47a5-af34-ecfb9b2fc426")]
 pub struct SelectionRange {
     /// Position of the beginning.
     pub begin: Position,
@@ -197,6 +195,24 @@ impl SelectionRange {
 /// Defines a function, that could be used to filter out desired characters. It must return `true` for characters, that pass
 /// the filter, and `false` - otherwise.
 pub type FilterCallback = dyn FnMut(char) -> bool + Send;
+
+/// A wrapper over a shared text box filter closure.
+#[derive(Clone)]
+pub struct TextBoxFilter(pub Arc<Mutex<FilterCallback>>);
+
+impl PartialEq for TextBoxFilter {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Deref for TextBoxFilter {
+    type Target = Mutex<FilterCallback>;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
 
 /// TextBox is a text widget that allows you to edit text and create specialized input fields. It has various options like
 /// word wrapping, text alignment, and so on.
@@ -396,8 +412,11 @@ pub type FilterCallback = dyn FnMut(char) -> bool + Send;
 ///
 /// You can change brush of caret by using [`TextBoxBuilder::with_caret_brush`] and also selection brush by using
 /// [`TextBoxBuilder::with_selection_brush`], it could be useful if you don't like default colors.
-#[derive(Default, Clone, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "536276f2-a175-4c05-a376-5a7d8bf0d10b"
+)]
 pub struct TextBox {
     /// Base widget of the text box.
     pub widget: Widget,
@@ -427,7 +446,7 @@ pub struct TextBox {
     /// Current character filter of the text box.
     #[visit(skip)]
     #[reflect(hidden)]
-    pub filter: Option<Arc<Mutex<FilterCallback>>>,
+    pub filter: Option<TextBoxFilter>,
     /// Current text commit mode of the text box.
     pub commit_mode: InheritableVariable<TextCommitMode>,
     /// `true` if the multiline mode is active.
@@ -926,8 +945,6 @@ impl TextBox {
     }
 }
 
-uuid_provider!(TextBox = "536276f2-a175-4c05-a376-5a7d8bf0d10b");
-
 impl Control for TextBox {
     fn measure_override(&self, ui: &UserInterface, available_size: Vector2<f32>) -> Vector2<f32> {
         let text_size = self
@@ -1316,6 +1333,10 @@ impl Control for TextBox {
                         self.selecting = false;
                         ui.release_mouse_capture();
                     }
+                    WidgetMessage::Style(style) => {
+                        self.formatted_text.borrow_mut().set_style(style);
+                        self.invalidate_layout();
+                    }
                     _ => {}
                 }
             } else if let Some(msg) = message.data::<TextMessage>() {
@@ -1525,7 +1546,7 @@ pub struct TextBoxBuilder<'a> {
     text: String,
     caret_brush: Brush,
     selection_brush: Brush,
-    filter: Option<Arc<Mutex<FilterCallback>>>,
+    filter: Option<TextBoxFilter>,
     vertical_alignment: VerticalAlignment,
     horizontal_alignment: HorizontalAlignment,
     wrap: WrapMode,
@@ -1611,7 +1632,7 @@ impl<'a> TextBoxBuilder<'a> {
     }
 
     /// Sets the desired character filter of the text box. See [`FilterCallback`] for more info.
-    pub fn with_filter(mut self, filter: Arc<Mutex<FilterCallback>>) -> Self {
+    pub fn with_filter(mut self, filter: TextBoxFilter) -> Self {
         self.filter = Some(filter);
         self
     }

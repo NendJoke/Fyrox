@@ -33,7 +33,8 @@ use fyrox_core::{
 };
 
 /// See module docs.
-#[derive(Debug, Clone, Visit, Reflect)]
+#[derive(Debug, Clone, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "fc52e441-d1ec-4881-937c-9e2e53a6d621")]
 pub struct Listener {
     basis: Matrix3<f32>,
     position: Vector3<f32>,

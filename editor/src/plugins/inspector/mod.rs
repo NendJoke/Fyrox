@@ -23,33 +23,35 @@ use crate::{
     fyrox::{
         asset::manager::ResourceManager,
         core::{
+            color::Color,
             dyntype::DynTypeConstructorContainer,
+            err,
             log::{Log, MessageKind},
             pool::{ErasedHandle, Handle},
             reflect::prelude::*,
-            type_traits::prelude::*,
         },
         engine::SerializationContext,
         graph::SceneGraph,
         gui::{
+            self,
             border::BorderBuilder,
-            button::ButtonMessage,
+            button::{Button, ButtonMessage},
             grid::{Column, GridBuilder, Row},
-            inspector::InspectorContextArgs,
             inspector::{
                 editors::PropertyEditorDefinitionContainer, InspectorBuilder, InspectorContext,
-                InspectorEnvironment, InspectorError, InspectorMessage,
+                InspectorContextArgs, InspectorEnvironment, InspectorError, InspectorMessage,
             },
             message::{MessageDirection, UiMessage},
             scroll_viewer::ScrollViewerBuilder,
-            stack_panel::StackPanelBuilder,
+            stack_panel::{StackPanel, StackPanelBuilder},
             style::{resource::StyleResource, resource::StyleResourceExt, Style},
-            text::{TextBuilder, TextMessage},
+            text::{Text, TextBuilder, TextMessage},
+            utils::ImageButtonBuilder,
             widget::WidgetBuilder,
-            window::{WindowBuilder, WindowTitle},
+            window::{Window, WindowBuilder, WindowTitle},
             BuildContext, Thickness, UiNode, UserInterface,
         },
-        scene::SceneContainer,
+        scene::{self, graph::Graph, node::Node, SceneContainer},
     },
     load_image,
     message::MessageSender,
@@ -60,46 +62,48 @@ use crate::{
     utils::window_content,
     Editor, Message, WidgetMessage, WrapMode,
 };
-use fyrox::core::color::Color;
-use fyrox::gui::button::Button;
-use fyrox::gui::stack_panel::StackPanel;
-use fyrox::gui::text::Text;
-use fyrox::gui::utils::ImageButtonBuilder;
-use fyrox::gui::window::Window;
+use fyrox::gui::inspector::InspectorEnvironmentContainer;
 use std::{any::Any, sync::mpsc::Sender, sync::Arc};
 
 pub mod editors;
 pub mod handlers;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Reflect, Debug)]
+#[reflect(type_uuid = "e617f0b6-fb5f-4e41-85c2-9dbb1869af30")]
 pub struct AnimationDefinition {
     name: String,
     handle: ErasedHandle,
 }
 
-#[derive(ComponentProvider)]
+#[derive(Reflect, Clone, Debug)]
+#[reflect(
+    non_cloneable,
+    non_comparable,
+    type_uuid = "ff4bc6f3-a735-47d8-b455-f9fd6354bd5f"
+)]
 pub struct EditorEnvironment {
     pub resource_manager: ResourceManager,
+    #[reflect(hidden)]
     pub serialization_context: Arc<SerializationContext>,
+    #[reflect(hidden)]
     pub dyn_type_constructors: Arc<DynTypeConstructorContainer>,
     /// List of animations definitions (name + handle). It is filled only if current selection
     /// is `AnimationBlendingStateMachine`. The list is filled using ABSM's animation player.
     pub available_animations: Vec<AnimationDefinition>,
     pub sender: MessageSender,
+    #[reflect(hidden)]
     pub icon_request_sender: Sender<IconRequest>,
-    #[component(include)]
     pub style: Option<StyleResource>,
 }
 
 impl EditorEnvironment {
     pub fn try_get_from(
-        environment: &Option<Arc<dyn InspectorEnvironment>>,
+        environment: &Option<InspectorEnvironmentContainer>,
     ) -> Result<&Self, InspectorError> {
         let environment = &**environment.as_ref().ok_or(InspectorError::Custom(
             "Missing InspectorEnvironment".into(),
         ))?;
-        environment
-            .as_any()
+        (environment as &dyn Any)
             .downcast_ref::<Self>()
             .ok_or(InspectorError::Custom(format!(
                 "Expected InspectorEnvironment to be EditorEnvironment, found: {}",
@@ -111,9 +115,6 @@ impl EditorEnvironment {
 impl InspectorEnvironment for EditorEnvironment {
     fn name(&self) -> String {
         format!("EditorEnvironment:{:?}", self.type_id())
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -137,7 +138,10 @@ fn fetch_available_animations(
         // TODO: Remove duplicated code.
         if let Some(absm_selection) = selection.as_absm::<UiNode>() {
             if let Some((_, animation_player)) =
-                animation_container_ref(&ui_scene.ui, absm_selection.absm_node_handle)
+                animation_container_ref::<UserInterface, UiNode, gui::animation::AnimationPlayer>(
+                    &ui_scene.ui,
+                    absm_selection.absm_node_handle,
+                )
             {
                 return animation_player
                     .pair_iter()
@@ -152,10 +156,12 @@ fn fetch_available_animations(
 
     if let Some(game_scene) = controller.downcast_ref::<GameScene>() {
         if let Some(absm_selection) = selection.as_absm() {
-            if let Some((_, animation_player)) = animation_container_ref(
-                &scenes[game_scene.scene].graph,
-                absm_selection.absm_node_handle,
-            ) {
+            if let Some((_, animation_player)) =
+                animation_container_ref::<Graph, Node, scene::animation::AnimationPlayer>(
+                    &scenes[game_scene.scene].graph,
+                    absm_selection.absm_node_handle,
+                )
+            {
                 return animation_player
                     .pair_iter()
                     .map(|(handle, anim)| AnimationDefinition {
@@ -195,9 +201,15 @@ fn print_errors(sync_errors: &[InspectorError]) {
 }
 
 fn is_out_of_sync(sync_errors: &[InspectorError]) -> bool {
-    sync_errors
-        .iter()
-        .any(|err| matches!(err, &InspectorError::OutOfSync))
+    sync_errors.iter().any(|err| {
+        if matches!(err, &InspectorError::OutOfSync) {
+            true
+        } else if let InspectorError::Group(group) = err {
+            is_out_of_sync(group)
+        } else {
+            false
+        }
+    })
 }
 
 impl InspectorPlugin {
@@ -337,11 +349,12 @@ impl InspectorPlugin {
             object: obj,
             ctx: &mut ui.build_ctx(),
             definition_container: property_editors,
-            environment: Some(environment),
+            environment: Some(InspectorEnvironmentContainer(environment)),
             layer_index: 0,
             generate_property_string_values: true,
             filter: Default::default(),
             name_column_width: 150.0,
+            hide_name_column: false,
             base_path: Default::default(),
             has_parent_object,
         });
@@ -349,7 +362,7 @@ impl InspectorPlugin {
         ui.send(self.inspector, InspectorMessage::Context(context));
         ui.send_sync(
             self.type_name_text,
-            TextMessage::Text(format!("Type Name: {}", obj.type_name())),
+            TextMessage::Text(format!("Type Name: {}", obj.type_info_ref().type_name)),
         );
     }
 
@@ -454,11 +467,19 @@ impl EditorPlugin for InspectorPlugin {
                             &*entry.controller,
                             &editor.engine.scenes,
                             &mut |entity_info| {
-                                entity_info.entity.resolve_path(path, &mut |result| {
-                                    if let Ok(result) = result {
-                                        self.clipboard = result.try_clone_box();
-                                    }
-                                });
+                                entity_info
+                                    .entity
+                                    .resolve_path(path, &mut |result| match result {
+                                        Ok(result) => {
+                                            self.clipboard = result.try_clone_box();
+                                        }
+                                        Err(err) => {
+                                            err!(
+                                                "Failed to resolve property on attempt to \
+                                                copy value at path {path}. Reason: {err:?}"
+                                            );
+                                        }
+                                    });
                             },
                         );
                     }
@@ -479,20 +500,24 @@ impl EditorPlugin for InspectorPlugin {
                             &*entry.controller,
                             &editor.engine.scenes,
                             &mut |entity_info| {
-                                entity_info.entity.resolve_path(path, &mut |result| {
-                                    if let Ok(property) = result {
-                                        can_clone = property.try_clone_box().is_some();
+                                entity_info
+                                    .entity
+                                    .resolve_path(path, &mut |result| match result {
+                                        Ok(property) => {
+                                            can_clone = property.try_clone_box().is_some();
 
-                                        if let Some(value) = self.clipboard.as_ref() {
-                                            value.as_any(&mut |value| {
-                                                property.as_any(&mut |property| {
-                                                    can_paste =
-                                                        property.type_id() == value.type_id();
-                                                })
-                                            })
+                                            if let Some(value) = self.clipboard.as_ref() {
+                                                can_paste =
+                                                    property.type_id() == (**value).type_id();
+                                            }
                                         }
-                                    }
-                                });
+                                        Err(err) => {
+                                            err!(
+                                                "Failed to resolve property on attempt to fetch \
+                                                status at path {path}. Reason: {err:?}"
+                                            );
+                                        }
+                                    });
                             },
                         );
 

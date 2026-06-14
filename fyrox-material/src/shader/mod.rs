@@ -323,19 +323,20 @@
 //!
 //! | Name                | Type        | Description                                                |
 //! |---------------------|-------------|------------------------------------------------------------|
-//! | worldViewProjection | `mat4`      | World-to-clip-space transformation matrix.                 |
+//! | projectionMatrix    | `mat4`      | World-to-clip-space transformation matrix.                 |
+//! | worldMatrix         | `mat3`      | Local-to-world-space transformation matrix.                |
 //! | solidColor          | `vec4`      | RGBA color.                                                |
 //! | gradientColors      | `vec4[16]`  | A set of gradient colors.                                  |
 //! | gradientStops       | `float[16]` | A set of normalized (0.0-1.0) stops along the axis.        |
-//! | gradientOrigin      | `vec2`      | Origin position of the gradient (local coordinates).       |
-//! | gradientEnd         | `vec2`      | End position of the gradient (local coordinates).          |
+//! | gradientOrigin      | `vec2`      | Origin position of the gradient (normalized coordinates).  |
+//! | gradientEnd         | `vec2`      | End position of the gradient (normalized coordinates).     |
 //! | gradientPointCount  | `int`       | Total number of gradient points.                           |
 //! | resolution          | `vec2`      | Frame buffer size to which the widget is drawn to.         |
-//! | boundsMin           | `vec2`      | Top-left point of the screen space bounding rectangle.     |
-//! | boundsMax           | `vec2`      | Right-bottom point of the screen space bounding rectangle. |
+//! | boundsMin           | `vec2`      | Top-left point of the local space bounding rectangle.      |
+//! | boundsMax           | `vec2`      | Right-bottom point of the local space bounding rectangle.  |
 //! | isFont              | `bool`      | `true` if the widget is a text, `false` - otherwise.       |
 //! | opacity             | `float`     | Opacity (0.0-1.0 range).                                   |
-//! | brushType           | `int`       | Brush type (0 solid, 1-linear gradient, 2-radial gradient  |
+//! | brushType           | `int`       | Brush type (0-solid, 1-linear gradient, 2-radial gradient  |
 //!
 //! # Code generation
 //!
@@ -459,7 +460,6 @@
 use fyrox_core::some_or_continue;
 use fyrox_core::{
     io::FileError, reflect::prelude::*, sparse::AtomicIndex, uuid::Uuid, visitor::prelude::*,
-    TypeUuidProvider,
 };
 pub use fyrox_graphics::gpu_program::{
     SamplerFallback, ShaderResourceDefinition, ShaderResourceKind,
@@ -515,7 +515,8 @@ pub const STANDARD_WIDGET_SHADER_NAME: &str = "Widget Shader";
 ///
 /// Usually you don't need to access internals of the shader, but there sometimes could be a need to
 /// read shader definition, to get supported passes and properties.
-#[derive(Default, Debug, Clone, Reflect, Visit)]
+#[derive(Default, Debug, Clone, Reflect, PartialEq, Visit)]
+#[reflect(type_uuid = "f1346417-b726-492a-b80f-c02096c6c019")]
 pub struct Shader {
     /// Shader definition contains description of properties and render passes.
     #[visit(optional)]
@@ -527,15 +528,9 @@ pub struct Shader {
     pub cache_index: Arc<AtomicIndex>,
 }
 
-impl TypeUuidProvider for Shader {
-    fn type_uuid() -> Uuid {
-        uuid!("f1346417-b726-492a-b80f-c02096c6c019")
-    }
-}
-
 /// A simple wrapper over string to hold shader source code.
-#[derive(Default, Clone, Debug, PartialEq, Eq, Reflect, Visit, TypeUuidProvider)]
-#[type_uuid(id = "d2aa5ba0-59e8-4f21-b7af-d6aab3a65379")]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Reflect, Visit)]
+#[reflect(type_uuid = "d2aa5ba0-59e8-4f21-b7af-d6aab3a65379")]
 pub struct ShaderSourceCode(pub String);
 
 impl Serialize for ShaderSourceCode {
@@ -571,10 +566,8 @@ impl DerefMut for ShaderSourceCode {
 }
 
 /// A render pass definition. See [`ShaderResource`] docs for more info about render passes.
-#[derive(
-    Default, Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Reflect, Visit, TypeUuidProvider,
-)]
-#[type_uuid(id = "450f2f3a-bdc8-4fd8-b62e-c4c924cd94ca")]
+#[derive(Default, Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Reflect, Visit)]
+#[reflect(type_uuid = "450f2f3a-bdc8-4fd8-b62e-c4c924cd94ca")]
 pub struct RenderPassDefinition {
     /// A name of render pass.
     pub name: String,
@@ -597,6 +590,7 @@ pub struct RenderPassDefinition {
 
 /// A definition of the shader.
 #[derive(Default, Clone, Serialize, Deserialize, Debug, PartialEq, Reflect, Visit)]
+#[reflect(type_uuid = "182e300f-c810-4063-8c48-4ac4972fa5d8")]
 pub struct ShaderDefinition {
     /// A name of the shader.
     pub name: String,
@@ -826,10 +820,6 @@ impl Shader {
 }
 
 impl ResourceData for Shader {
-    fn type_uuid(&self) -> Uuid {
-        <Self as TypeUuidProvider>::type_uuid()
-    }
-
     fn save(&mut self, path: &Path) -> Result<(), Box<dyn Error>> {
         let mut file = File::create(path)?;
         file.write_all(

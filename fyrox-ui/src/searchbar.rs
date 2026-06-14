@@ -32,8 +32,8 @@ use crate::{
     brush::Brush,
     button::{ButtonBuilder, ButtonMessage},
     core::{
-        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        uuid_provider, variable::InheritableVariable, visitor::prelude::*,
+        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*,
+        variable::InheritableVariable, visitor::prelude::*,
     },
     decorator::DecoratorBuilder,
     define_widget_deref,
@@ -97,8 +97,11 @@ impl MessageData for SearchBarMessage {}
 ///     }
 /// }
 /// ```
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "23db1179-0e07-493d-98fd-2b3c0c795215"
+)]
 pub struct SearchBar {
     /// Base widget of the search bar.
     pub widget: Widget,
@@ -122,8 +125,6 @@ impl ConstructorProvider<UiNode, UserInterface> for SearchBar {
 }
 
 define_widget_deref!(SearchBar);
-
-uuid_provider!(SearchBar = "23db1179-0e07-493d-98fd-2b3c0c795215");
 
 impl Control for SearchBar {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {

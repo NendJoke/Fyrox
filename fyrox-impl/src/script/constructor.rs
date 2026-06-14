@@ -24,10 +24,11 @@ use crate::{
     core::{
         parking_lot::{Mutex, MutexGuard},
         uuid::Uuid,
-        SafeLock, TypeUuidProvider,
+        SafeLock,
     },
     script::{Script, ScriptTrait},
 };
+use fyrox_core::reflect::Reflect;
 use std::collections::BTreeMap;
 
 /// Script constructor contains all required data and methods to create script instances
@@ -66,15 +67,17 @@ impl ScriptConstructorContainer {
     /// The method will panic if there is already a constructor for given type uuid.
     pub fn add<T>(&self, name: &str) -> &Self
     where
-        T: TypeUuidProvider + ScriptTrait + Default,
+        T: ScriptTrait + Default,
     {
+        let type_info = T::type_info();
+
         let old = self.map.safe_lock().insert(
-            T::type_uuid(),
+            <T as Reflect>::type_info().type_uuid,
             ScriptConstructor {
                 constructor: Box::new(|| Script::new(T::default())),
                 name: name.to_owned(),
-                source_path: T::source_path(),
-                assembly_name: T::type_assembly_name(),
+                source_path: type_info.source_path,
+                assembly_name: type_info.assembly_name,
             },
         );
 

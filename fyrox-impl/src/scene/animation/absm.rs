@@ -27,7 +27,6 @@ use crate::{
         math::aabb::AxisAlignedBoundingBox,
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
         uuid::{uuid, Uuid},
         variable::InheritableVariable,
         visitor::prelude::*,
@@ -42,7 +41,6 @@ use crate::{
 };
 use fyrox_graph::constructor::ConstructorProvider;
 use fyrox_graph::SceneGraph;
-use std::any::{Any, TypeId};
 use std::ops::{Deref, DerefMut};
 
 /// Scene specific root motion settings.
@@ -139,7 +137,6 @@ impl LayerMaskExt for LayerMask {
 
 type MachineType = InheritableVariable<Machine>;
 type AnimationPlayerHandle = InheritableVariable<Handle<AnimationPlayer>>;
-type AnimationPlayerUntypedHandle = InheritableVariable<Handle<Node>>;
 
 /// Animation blending state machine (ABSM) is a node that takes multiple animations from an animation player and
 /// mixes them in arbitrary way into one animation. Usually, ABSMs are used to animate humanoid characters in games,
@@ -222,46 +219,15 @@ type AnimationPlayerUntypedHandle = InheritableVariable<Handle<Node>>;
 ///         .build(graph)
 /// }
 /// ```
-#[derive(Visit, Reflect, Clone, Debug, Default)]
-#[reflect(derived_type = "Node")]
+#[derive(Visit, PartialEq, Reflect, Clone, Debug, Default)]
+#[reflect(
+    derived_type = "Node",
+    type_uuid = "4b08c753-2a10-41e3-8fb2-4fd0517e86bc"
+)]
 pub struct AnimationBlendingStateMachine {
     base: Base,
     machine: MachineType,
     animation_player: AnimationPlayerHandle,
-}
-
-impl ComponentProvider for AnimationBlendingStateMachine {
-    fn query_component_ref(&self, type_id: TypeId) -> Option<&dyn Any> {
-        if type_id == TypeId::of::<Self>() {
-            Some(self)
-        } else if type_id == TypeId::of::<MachineType>() {
-            Some(&self.machine)
-        } else if type_id == TypeId::of::<AnimationPlayerUntypedHandle>() {
-            Some(unsafe {
-                std::mem::transmute::<&AnimationPlayerHandle, &AnimationPlayerUntypedHandle>(
-                    &self.animation_player,
-                )
-            })
-        } else {
-            None
-        }
-    }
-
-    fn query_component_mut(&mut self, type_id: TypeId) -> Option<&mut dyn Any> {
-        if type_id == TypeId::of::<Self>() {
-            Some(self)
-        } else if type_id == TypeId::of::<MachineType>() {
-            Some(&mut self.machine)
-        } else if type_id == TypeId::of::<AnimationPlayerUntypedHandle>() {
-            Some(unsafe {
-                std::mem::transmute::<&mut AnimationPlayerHandle, &mut AnimationPlayerUntypedHandle>(
-                    &mut self.animation_player,
-                )
-            })
-        } else {
-            None
-        }
-    }
 }
 
 impl AnimationBlendingStateMachine {
@@ -290,12 +256,6 @@ impl AnimationBlendingStateMachine {
     /// Returns an animation player used by the node.
     pub fn animation_player(&self) -> Handle<AnimationPlayer> {
         *self.animation_player
-    }
-}
-
-impl TypeUuidProvider for AnimationBlendingStateMachine {
-    fn type_uuid() -> Uuid {
-        uuid!("4b08c753-2a10-41e3-8fb2-4fd0517e86bc")
     }
 }
 
@@ -345,7 +305,7 @@ impl NodeTrait for AnimationBlendingStateMachine {
     }
 
     fn id(&self) -> Uuid {
-        Self::type_uuid()
+        <Self as Reflect>::type_info().type_uuid
     }
 
     fn update(&mut self, context: &mut UpdateContext) {

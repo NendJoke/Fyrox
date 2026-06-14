@@ -24,7 +24,7 @@ use crate::{
         asset::{manager::ResourceManager, untyped::UntypedResource},
         core::{
             algebra::Vector2, color::Color, make_relative_path, pool::Handle, reflect::prelude::*,
-            type_traits::prelude::*, uuid_provider, visitor::prelude::*,
+            visitor::prelude::*,
         },
         graph::SceneGraph,
         gui::{
@@ -58,8 +58,12 @@ use std::{
     sync::mpsc::Sender,
 };
 
-#[derive(Clone, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Visit, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "5db49479-ff89-49b8-a038-0766253d6493",
+    non_comparable
+)]
 pub struct TextureEditor {
     widget: Widget,
     image: Handle<Image>,
@@ -98,8 +102,6 @@ pub enum TextureEditorMessage {
     Texture(Option<TextureResource>),
 }
 impl MessageData for TextureEditorMessage {}
-
-uuid_provider!(TextureEditor = "5db49479-ff89-49b8-a038-0766253d6493");
 
 fn texture_name(texture: Option<&TextureResource>, resource_manager: &ResourceManager) -> String {
     match texture.and_then(|tex| resource_manager.resource_path(tex.as_ref())) {

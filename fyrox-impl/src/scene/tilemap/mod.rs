@@ -59,7 +59,6 @@ use crate::{
         math::{aabb::AxisAlignedBoundingBox, Matrix4Ext, TriangleDefinition},
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
         variable::InheritableVariable,
         visitor::prelude::*,
         ImmutableString, SafeLock,
@@ -82,6 +81,7 @@ use crate::{
     },
 };
 use bytemuck::{Pod, Zeroable};
+use fyrox_core::parking_lot::MutexGuard;
 use fyrox_resource::manager::ResourceManager;
 use std::{
     error::Error,
@@ -296,7 +296,7 @@ fn make_tile_vertex(
 }
 
 /// A record whether a change has happened since the most recent save.
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Debug, PartialEq, Copy, Clone)]
 pub struct ChangeFlag(bool);
 
 impl ChangeFlag {
@@ -365,6 +365,7 @@ impl VertexTrait for TileVertex {
 /// Giving a particular `TilePaletteStage` to a tile map palette will control which kind of
 /// tiles it will display.
 #[derive(Clone, Copy, Default, Debug, Visit, Reflect, PartialEq)]
+#[reflect(type_uuid = "05cec1a9-faa9-45a2-a4a4-245849cb2fb4")]
 pub enum TilePaletteStage {
     /// The page tile stage. These tiles allow the user to select which page they want to use.
     #[default]
@@ -403,6 +404,7 @@ pub enum PageType {
 /// [`TileRenderData`]. For pages this is due to having an icon to allow the user to select the page.
 /// Both pages and tiles can be selected by the user, moved, and deleted.
 #[derive(Clone, Copy, Debug, PartialEq, Visit, Reflect)]
+#[reflect(type_uuid = "be84a122-3d0f-4a9f-8bba-d55cf8583aad")]
 pub enum ResourceTilePosition {
     /// This position refers to some page, and so it lacks tile coordinates.
     Page(Vector2<i32>),
@@ -487,8 +489,8 @@ impl ResourceTilePosition {
 
 /// Tile is a base block of a tile map. It has a position and a handle of tile definition, stored
 /// in the respective tile set.
-#[derive(Clone, Reflect, Default, Debug, PartialEq, Visit, ComponentProvider, TypeUuidProvider)]
-#[type_uuid(id = "e429ca1b-a311-46c3-b580-d5a2f49db7e2")]
+#[derive(Clone, Reflect, Default, Debug, PartialEq, Visit)]
+#[reflect(type_uuid = "e429ca1b-a311-46c3-b580-d5a2f49db7e2")]
 pub struct Tile {
     /// Position of the tile (in grid coordinates).
     pub position: Vector2<i32>,
@@ -518,10 +520,11 @@ impl<I: Iterator<Item = Vector2<i32>>> Iterator for TileIter<I> {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Visit, Reflect)]
 /// Abstract source of tiles, which can either be a tile set or a brush.
 /// It is called a "book" because each of these tile resources contains
 /// pages of tiles.
+#[derive(Debug, Default, Clone, PartialEq, Visit, Reflect)]
+#[reflect(type_uuid = "76563800-35fa-46aa-bb58-5f358d769654")]
 pub enum TileBook {
     /// A tile resource containing no tiles.
     #[default]
@@ -943,6 +946,21 @@ impl OrthoTransform for TileRenderData {
     }
 }
 
+#[derive(Default, Debug)]
+struct HiddenTilesContainer(Mutex<FxHashSet<Vector2<i32>>>);
+
+impl HiddenTilesContainer {
+    fn inner(&self) -> MutexGuard<FxHashSet<Vector2<i32>>> {
+        self.0.safe_lock()
+    }
+}
+
+impl PartialEq for HiddenTilesContainer {
+    fn eq(&self, other: &Self) -> bool {
+        *self.0.safe_lock() == *other.0.safe_lock()
+    }
+}
+
 /// Tile map is a 2D "image", made out of a small blocks called tiles. Tile maps used in 2D games to
 /// build game worlds quickly and easily. Each tile is represented by a [`TileDefinitionHandle`] which
 /// contains the position of a page and the position of a tile within that page.
@@ -951,9 +969,9 @@ impl OrthoTransform for TileRenderData {
 /// which contains all the pages that may be referenced by the tile map's handles.
 ///
 /// Optional [`TileMapEffect`] objects may be included in the `TileMap` to change how it renders.
-#[derive(Reflect, Debug, ComponentProvider, TypeUuidProvider)]
+#[derive(Reflect, PartialEq, Debug)]
 #[reflect(derived_type = "Node")]
-#[type_uuid(id = "aa9a3385-a4af-4faf-a69a-8d3af1a3aa67")]
+#[reflect(type_uuid = "aa9a3385-a4af-4faf-a69a-8d3af1a3aa67")]
 pub struct TileMap {
     base: Base,
     /// The source of rendering data for tiles in this tile map.
@@ -966,19 +984,19 @@ pub struct TileMap {
     /// Temporary space to store which tiles are invisible during `collect_render_data`.
     /// This is part of how [`TileMapEffect`] can prevent a tile from being rendered.
     #[reflect(hidden)]
-    hidden_tiles: Mutex<FxHashSet<Vector2<i32>>>,
+    hidden_tiles: HiddenTilesContainer,
     /// Special rendering effects that may change how the tile map renders.
     /// These effects are processed in order before the tile map performs the
     /// normal rendering of tiles, and they can prevent some times from being
     /// rendered and render other tiles in place of what would normally be
     /// rendered.
     #[reflect(hidden)]
-    pub before_effects: Vec<TileMapEffectRef>,
+    pub before_effects: Vec<TileMapEffectRefContainer>,
     /// Special rendering effects that may change how the tile map renders.
     /// These effects are processed in order after the tile map performs the
     /// normal rendering of tiles.
     #[reflect(hidden)]
-    pub after_effects: Vec<TileMapEffectRef>,
+    pub after_effects: Vec<TileMapEffectRefContainer>,
 }
 
 impl Visit for TileMap {
@@ -1324,7 +1342,7 @@ impl Default for TileMap {
             tiles: Default::default(),
             tile_scale: Vector2::repeat(1.0).into(),
             active_brush: Default::default(),
-            hidden_tiles: Mutex::default(),
+            hidden_tiles: Default::default(),
             before_effects: Vec::default(),
             after_effects: Vec::default(),
         }
@@ -1339,7 +1357,7 @@ impl Clone for TileMap {
             tiles: self.tiles.clone(),
             tile_scale: self.tile_scale.clone(),
             active_brush: self.active_brush.clone(),
-            hidden_tiles: Mutex::default(),
+            hidden_tiles: Default::default(),
             before_effects: self.before_effects.clone(),
             after_effects: self.after_effects.clone(),
         }
@@ -1393,7 +1411,7 @@ impl NodeTrait for TileMap {
     }
 
     fn id(&self) -> Uuid {
-        Self::type_uuid()
+        <Self as Reflect>::type_info().type_uuid
     }
 
     fn collect_render_data(&self, ctx: &mut RenderContext) -> RdcControlFlow {
@@ -1412,7 +1430,7 @@ impl NodeTrait for TileMap {
         let mut tile_set_lock = TileSetRef::new(tile_set_resource);
         let tile_set = tile_set_lock.as_loaded();
 
-        let mut hidden_tiles = self.hidden_tiles.safe_lock();
+        let mut hidden_tiles = self.hidden_tiles.inner();
         hidden_tiles.clear();
 
         let bounds = ctx
@@ -1432,7 +1450,7 @@ impl NodeTrait for TileMap {
 
         for effect in self.before_effects.iter() {
             effect
-                .safe_lock()
+                .inner()
                 .render_special_tiles(&mut tile_render_context);
         }
         let bounds = tile_render_context.visible_bounds();
@@ -1459,7 +1477,7 @@ impl NodeTrait for TileMap {
         }
         for effect in self.after_effects.iter() {
             effect
-                .safe_lock()
+                .inner()
                 .render_special_tiles(&mut tile_render_context);
         }
         RdcControlFlow::Continue
@@ -1483,8 +1501,8 @@ pub struct TileMapBuilder {
     tile_set: Option<TileSetResource>,
     tiles: TileMapData,
     tile_scale: Vector2<f32>,
-    before_effects: Vec<TileMapEffectRef>,
-    after_effects: Vec<TileMapEffectRef>,
+    before_effects: Vec<TileMapEffectRefContainer>,
+    after_effects: Vec<TileMapEffectRefContainer>,
 }
 
 impl TileMapBuilder {
@@ -1521,13 +1539,13 @@ impl TileMapBuilder {
     }
 
     /// Adds an effect to the tile map which will run before the tiles render.
-    pub fn with_before_effect(mut self, effect: TileMapEffectRef) -> Self {
+    pub fn with_before_effect(mut self, effect: TileMapEffectRefContainer) -> Self {
         self.before_effects.push(effect);
         self
     }
 
     /// Adds an effect to the tile map which will run after the tiles render.
-    pub fn with_after_effect(mut self, effect: TileMapEffectRef) -> Self {
+    pub fn with_after_effect(mut self, effect: TileMapEffectRefContainer) -> Self {
         self.after_effects.push(effect);
         self
     }
@@ -1545,7 +1563,7 @@ impl TileMapBuilder {
             .into(),
             tile_scale: self.tile_scale.into(),
             active_brush: Default::default(),
-            hidden_tiles: Mutex::default(),
+            hidden_tiles: Default::default(),
             before_effects: self.before_effects,
             after_effects: self.after_effects,
         })

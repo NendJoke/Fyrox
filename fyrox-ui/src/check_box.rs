@@ -31,7 +31,6 @@ use crate::{
         color::Color,
         pool::{Handle, ObjectOrVariant},
         reflect::prelude::*,
-        type_traits::prelude::*,
         variable::InheritableVariable,
         visitor::prelude::*,
     },
@@ -149,8 +148,8 @@ impl MessageData for CheckBoxMessage {}
 /// 2) [`CheckBoxBuilder::with_check_mark`] - sets the widget that will be used as checked icon.
 /// 3) [`CheckBoxBuilder::with_uncheck_mark`] - sets the widget that will be used as unchecked icon.
 /// 4) [`CheckBoxBuilder::with_undefined_mark`] - sets the widget that will be used as undefined icon.
-#[derive(Default, Clone, Debug, Visit, Reflect, TypeUuidProvider, ComponentProvider)]
-#[type_uuid(id = "3a866ba8-7682-4ce7-954a-46360f5837dc")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "3a866ba8-7682-4ce7-954a-46360f5837dc")]
 #[reflect(derived_type = "UiNode")]
 pub struct CheckBox {
     /// Base widget of the checkbox.
@@ -240,16 +239,26 @@ impl Control for CheckBox {
 
                 ui.try_send_response(message);
 
-                if self.check_mark.is_some() {
-                    match value {
-                        None => {
+                match value {
+                    None => {
+                        if self.check_mark.is_some() {
                             ui.send(*self.check_mark, WidgetMessage::Visibility(false));
+                        }
+                        if self.uncheck_mark.is_some() {
                             ui.send(*self.uncheck_mark, WidgetMessage::Visibility(false));
+                        }
+                        if self.undefined_mark.is_some() {
                             ui.send(*self.undefined_mark, WidgetMessage::Visibility(true));
                         }
-                        Some(value) => {
+                    }
+                    Some(value) => {
+                        if self.check_mark.is_some() {
                             ui.send(*self.check_mark, WidgetMessage::Visibility(value));
+                        }
+                        if self.uncheck_mark.is_some() {
                             ui.send(*self.uncheck_mark, WidgetMessage::Visibility(!value));
+                        }
+                        if self.undefined_mark.is_some() {
                             ui.send(*self.undefined_mark, WidgetMessage::Visibility(false));
                         }
                     }

@@ -25,10 +25,7 @@
 #![allow(clippy::reversed_empty_ranges)]
 
 use crate::{
-    core::{
-        algebra::Vector2, math::Rect, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        visitor::prelude::*,
-    },
+    core::{algebra::Vector2, math::Rect, pool::Handle, reflect::prelude::*, visitor::prelude::*},
     message::UiMessage,
     widget::{Widget, WidgetBuilder},
     BuildContext, Control, Orientation, UiNode, UserInterface,
@@ -36,7 +33,7 @@ use crate::{
 
 use crate::message::MessageData;
 use core::f32;
-use fyrox_core::uuid_provider;
+
 use fyrox_core::variable::InheritableVariable;
 use fyrox_graph::constructor::{ConstructorProvider, GraphNodeConstructor};
 use fyrox_graph::SceneGraph;
@@ -79,8 +76,11 @@ impl MessageData for WrapPanelMessage {}
 ///
 /// Wrap panel can stack your widgets either in vertical or horizontal direction. Use `.with_orientation` while building
 /// the panel to switch orientation to desired.
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "f488ab8e-8f8b-473c-a450-5ac33f1afb39"
+)]
 pub struct WrapPanel {
     /// Base widget of the wrap panel.
     pub widget: Widget,
@@ -108,7 +108,7 @@ impl ConstructorProvider<UiNode, UserInterface> for WrapPanel {
 crate::define_widget_deref!(WrapPanel);
 
 /// Represents a single line (either vertical or horizontal) with arranged widgets.
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Line {
     /// Indices of the children widgets that belongs to this line.
     pub children: Range<usize>,
@@ -124,8 +124,6 @@ impl Default for Line {
         }
     }
 }
-
-uuid_provider!(WrapPanel = "f488ab8e-8f8b-473c-a450-5ac33f1afb39");
 
 impl Control for WrapPanel {
     fn measure_override(&self, ui: &UserInterface, available_size: Vector2<f32>) -> Vector2<f32> {

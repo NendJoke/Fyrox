@@ -58,30 +58,31 @@ fn position_to_vector(source: PalettePosition) -> Vector2<i32> {
 
 /// A 2D grid that contains tile data.
 #[derive(Default, Debug, Clone, PartialEq, Reflect)]
-pub struct TileGridMap<V: Debug + Clone + Reflect>(FxHashMap<Vector2<i32>, V>);
+#[reflect(type_uuid = "161e38e6-197c-41ed-aa87-de293662cd3d")]
+pub struct TileGridMap<V: Debug + Clone + Reflect + PartialEq>(FxHashMap<Vector2<i32>, V>);
 
-impl<V: Visit + Default + Debug + Clone + Reflect> Visit for TileGridMap<V> {
+impl<V: Visit + Default + Debug + Clone + Reflect + PartialEq> Visit for TileGridMap<V> {
     fn visit(&mut self, name: &str, visitor: &mut Visitor) -> VisitResult {
         self.0.visit(name, visitor)
     }
 }
 
-impl<V: Debug + Clone + Reflect> Deref for TileGridMap<V> {
+impl<V: Debug + Clone + Reflect + PartialEq> Deref for TileGridMap<V> {
     type Target = FxHashMap<Vector2<i32>, V>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<V: Debug + Clone + Reflect> DerefMut for TileGridMap<V> {
+impl<V: Debug + Clone + Reflect + PartialEq> DerefMut for TileGridMap<V> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
 /// Position of a tile definition within some tile set
-#[derive(Eq, PartialEq, Clone, Copy, Default, Hash, Reflect, Visit, TypeUuidProvider)]
-#[type_uuid(id = "3eb69303-d361-482d-8094-44b9f9c323ca")]
+#[derive(Eq, PartialEq, Clone, Copy, Default, Hash, Reflect, Visit)]
+#[reflect(type_uuid = "3eb69303-d361-482d-8094-44b9f9c323ca")]
 #[repr(C)]
 pub struct TileDefinitionHandle {
     /// Position of the tile's page
@@ -371,7 +372,7 @@ pub struct Tiles(TileGridMap<TileDefinitionHandle>);
 
 /// A set of tiles and a transformation, which represents the tiles that the user has selected
 /// to draw with.
-#[derive(Clone, Debug, Default, Visit)]
+#[derive(Clone, Debug, PartialEq, Default, Visit)]
 pub struct Stamp {
     transform: OrthoTransformation,
     #[visit(skip)]
@@ -382,7 +383,8 @@ pub struct Stamp {
 
 /// Each cell of a stamp must have a tile handle and it may optionally have
 /// the handle of a brush cell where the tile was taken from.
-#[derive(Clone, Debug, Reflect, Visit, Default)]
+#[derive(Clone, Debug, Reflect, PartialEq, Visit, Default)]
+#[reflect(type_uuid = "40f40b03-0061-4221-909f-d8590f15efd9")]
 pub struct StampElement {
     /// The stamp cell's tile handle
     pub handle: TileDefinitionHandle,

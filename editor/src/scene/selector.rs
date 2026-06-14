@@ -20,12 +20,9 @@
 
 use crate::{
     fyrox::{
-        core::{
-            parking_lot::Mutex, pool::ErasedHandle, pool::Handle, reflect::prelude::*,
-            type_traits::prelude::*, visitor::prelude::*,
-        },
+        core::{pool::ErasedHandle, pool::Handle, reflect::prelude::*, visitor::prelude::*},
         fxhash::FxHashSet,
-        graph::{SceneGraph, SceneGraphNode},
+        graph::{NodeWrapper, SceneGraph},
         gui::{
             border::BorderBuilder,
             button::{ButtonBuilder, ButtonMessage},
@@ -55,12 +52,12 @@ use fyrox::gui::scroll_viewer::ScrollViewer;
 use fyrox::gui::searchbar::SearchBar;
 use fyrox::gui::text_box::EmptyTextPlaceholder;
 use fyrox::gui::tree::TreeRoot;
+use fyrox::gui::widget::UserData;
 use std::hash::{Hash, Hasher};
 use std::{
     any::{Any, TypeId},
     fmt::Debug,
     ops::{Deref, DerefMut},
-    sync::Arc,
 };
 
 #[derive(Eq, Clone, Debug, PartialEq)]
@@ -76,8 +73,8 @@ pub struct HierarchyNode {
 impl HierarchyNode {
     pub fn from_scene_node<G, N>(node_handle: Handle<N>, ignored_node: Handle<N>, graph: &G) -> Self
     where
-        G: SceneGraph<Node = N>,
-        N: SceneGraphNode<SceneGraph = G>,
+        G: SceneGraph<NodeWrapper = N>,
+        N: NodeWrapper<SceneGraph = G>,
     {
         let node = graph.node(node_handle);
 
@@ -135,14 +132,12 @@ impl HierarchyNode {
             ctx.style.property(Style::BRUSH_LIGHT)
         };
 
-        TreeBuilder::new(
-            WidgetBuilder::new().with_user_data(Arc::new(Mutex::new(TreeData {
-                name: self.name.clone(),
-                handle: self.handle,
-                inner_type_id: self.inner_type_id,
-                derived_type_ids: self.derived_type_ids.clone(),
-            }))),
-        )
+        TreeBuilder::new(WidgetBuilder::new().with_user_data(UserData::new(TreeData {
+            name: self.name.clone(),
+            handle: self.handle,
+            inner_type_id: self.inner_type_id,
+            derived_type_ids: self.derived_type_ids.clone(),
+        })))
         .with_items(
             self.children
                 .iter()
@@ -159,6 +154,7 @@ impl HierarchyNode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Visit, Reflect)]
+#[reflect(type_uuid = "760fdb9d-45f6-4fc1-9fa0-86a802a40a1f")]
 pub struct SelectedHandle {
     #[visit(skip)]
     #[reflect(hidden)]
@@ -173,7 +169,7 @@ impl<T: Reflect> From<Handle<T>> for SelectedHandle {
     fn from(value: Handle<T>) -> Self {
         Self {
             inner_type_id: TypeId::of::<T>(),
-            derived_type_ids: T::derived_types().to_vec(),
+            derived_type_ids: T::type_info().derived_types.to_vec(),
             handle: value.into(),
         }
     }
@@ -206,9 +202,9 @@ struct TreeData {
     pub derived_type_ids: Vec<TypeId>,
 }
 
-#[derive(Debug, Clone, Visit, Reflect, TypeUuidProvider, ComponentProvider)]
+#[derive(Debug, Clone, PartialEq, Visit, Reflect)]
 #[reflect(derived_type = "UiNode")]
-#[type_uuid(id = "1d718f90-323c-492d-b057-98d47495900a")]
+#[reflect(type_uuid = "1d718f90-323c-492d-b057-98d47495900a")]
 pub struct NodeSelector {
     widget: Widget,
     tree_root: Handle<TreeRoot>,
@@ -231,7 +227,7 @@ fn apply_filter_recursive(node: Handle<UiNode>, filter: &str, ui: &UserInterface
     }
 
     if let Some(data) = node_ref
-        .query_component::<Tree>()
+        .self_or_field_ref::<Tree>()
         .and_then(|n| n.user_data_cloned::<TreeData>())
     {
         is_any_match |= data.name.to_lowercase().contains(filter);
@@ -314,7 +310,7 @@ impl NodeSelector {
         while let Some(node_handle) = stack.pop() {
             let node = ui.node(node_handle);
 
-            if let Some(tree) = node.query_component::<Tree>() {
+            if let Some(tree) = node.self_or_field_ref::<Tree>() {
                 if self.selected.iter().any(|selected| {
                     let tree_data = tree.user_data_cloned::<TreeData>().unwrap();
                     tree_data.handle == selected.handle
@@ -427,11 +423,10 @@ impl NodeSelectorBuilder {
     }
 }
 
-#[derive(Debug, Clone, Visit, Reflect, TypeUuidProvider, ComponentProvider)]
-#[type_uuid(id = "5bb00f15-d6ec-4f0e-af7e-9472b0e290b4")]
+#[derive(Debug, Clone, PartialEq, Visit, Reflect)]
+#[reflect(type_uuid = "5bb00f15-d6ec-4f0e-af7e-9472b0e290b4")]
 #[reflect(derived_type = "UiNode")]
 pub struct NodeSelectorWindow {
-    #[component(include)]
     window: Window,
     selector: Handle<NodeSelector>,
     ok: Handle<Button>,

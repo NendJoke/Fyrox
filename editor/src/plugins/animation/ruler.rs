@@ -25,8 +25,6 @@ use crate::fyrox::{
         math::Rect,
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
-        uuid_provider,
         visitor::prelude::*,
     },
     gui::{
@@ -67,7 +65,7 @@ pub enum RulerMessage {
 }
 impl MessageData for RulerMessage {}
 
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 struct ContextMenu {
     menu: RcUiNodeHandle,
     add_signal: Handle<MenuItem>,
@@ -150,19 +148,22 @@ impl SignalView {
     const SIZE: f32 = 10.0;
 }
 
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 enum DragEntity {
     TimePosition,
     Signal(Uuid),
 }
 
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 struct DragContext {
     entity: DragEntity,
 }
 
-#[derive(Clone, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "98655c9b-428f-4977-a478-ad3674cc66d4"
+)]
 pub struct Ruler {
     widget: Widget,
     #[visit(skip)]
@@ -214,8 +215,6 @@ impl Ruler {
             .x
     }
 }
-
-uuid_provider!(Ruler = "98655c9b-428f-4977-a478-ad3674cc66d4");
 
 impl Control for Ruler {
     fn draw(&self, ctx: &mut DrawingContext) {

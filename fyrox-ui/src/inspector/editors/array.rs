@@ -19,18 +19,14 @@
 // SOFTWARE.
 
 use crate::{
-    core::{
-        pool::Handle, reflect::prelude::*, type_traits::prelude::*, uuid_provider,
-        visitor::prelude::*, PhantomDataSendSync,
-    },
+    core::{pool::Handle, reflect::prelude::*, visitor::prelude::*, PhantomDataSendSync},
     inspector::{
         editors::{
             PropertyEditorBuildContext, PropertyEditorDefinition,
             PropertyEditorDefinitionContainer, PropertyEditorInstance,
             PropertyEditorMessageContext, PropertyEditorTranslationContext,
         },
-        make_expander_container, CollectionAction, FieldAction, InspectorEnvironment,
-        InspectorError, PropertyChanged,
+        make_expander_container, CollectionAction, FieldAction, InspectorError, PropertyChanged,
     },
     inspector::{make_property_margin, PropertyFilter},
     message::{MessageDirection, UiMessage},
@@ -39,12 +35,14 @@ use crate::{
     BuildContext, Control, Thickness, UiNode, UserInterface,
 };
 
+use crate::inspector::InspectorEnvironmentContainer;
 use crate::message::{DeliveryMode, MessageData};
 use fyrox_graph::SceneGraph;
 use std::sync::Arc;
 use std::{any::TypeId, fmt::Debug};
 
 #[derive(Clone, Debug, PartialEq, Visit, Reflect, Default)]
+#[reflect(type_uuid = "5c6e4785-8e2d-441f-8478-523900394b93")]
 pub struct Item {
     pub editor_instance: PropertyEditorInstance,
 }
@@ -55,16 +53,17 @@ pub enum ArrayEditorMessage {
 }
 impl MessageData for ArrayEditorMessage {}
 
-#[derive(Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "5c6e4785-8e2d-441f-8478-523900394b93"
+)]
 pub struct ArrayEditor {
     pub widget: Widget,
     pub items: Vec<Item>,
 }
 
 crate::define_widget_deref!(ArrayEditor);
-
-uuid_provider!(ArrayEditor = "5c6e4785-8e2d-441f-8478-523900394b93");
 
 impl Control for ArrayEditor {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
@@ -93,7 +92,7 @@ where
 {
     widget_builder: WidgetBuilder,
     collection: Option<I>,
-    environment: Option<Arc<dyn InspectorEnvironment>>,
+    environment: Option<InspectorEnvironmentContainer>,
     definition_container: Option<Arc<PropertyEditorDefinitionContainer>>,
     layer_index: usize,
     generate_property_string_values: bool,
@@ -112,7 +111,7 @@ fn create_item_views(items: &[Item]) -> Vec<Handle<UiNode>> {
 
 fn create_items<'a, 'b, T, I>(
     iter: I,
-    environment: Option<Arc<dyn InspectorEnvironment>>,
+    environment: Option<InspectorEnvironmentContainer>,
     definition_container: Arc<PropertyEditorDefinitionContainer>,
     property_info: &FieldRef<'a, 'b>,
     ctx: &mut BuildContext,
@@ -120,6 +119,7 @@ fn create_items<'a, 'b, T, I>(
     generate_property_string_values: bool,
     filter: PropertyFilter,
     name_column_width: f32,
+    hide_name_column: bool,
     base_path: String,
     has_parent_object: bool,
 ) -> Result<Vec<Item>, InspectorError>
@@ -164,6 +164,7 @@ where
                         generate_property_string_values,
                         filter: filter.clone(),
                         name_column_width,
+                        hide_name_column,
                         base_path: format!("{base_path}[{index}]"),
                         has_parent_object,
                     })?;
@@ -208,7 +209,7 @@ where
         self
     }
 
-    pub fn with_environment(mut self, environment: Option<Arc<dyn InspectorEnvironment>>) -> Self {
+    pub fn with_environment(mut self, environment: Option<InspectorEnvironmentContainer>) -> Self {
         self.environment = environment;
         self
     }
@@ -244,6 +245,7 @@ where
         ctx: &mut BuildContext,
         property_info: &FieldRef<'a, '_>,
         name_column_width: f32,
+        hide_name_column: bool,
         base_path: String,
         has_parent_object: bool,
     ) -> Result<Handle<ArrayEditor>, InspectorError> {
@@ -263,6 +265,7 @@ where
                 self.generate_property_string_values,
                 self.filter,
                 name_column_width,
+                hide_name_column,
                 base_path,
                 has_parent_object,
             )?
@@ -294,7 +297,7 @@ where
 
 impl<T, const N: usize> ArrayPropertyEditorDefinition<T, N>
 where
-    T: Reflect,
+    T: Reflect + Clone,
 {
     pub fn new() -> Self {
         Self::default()
@@ -303,7 +306,7 @@ where
 
 impl<T, const N: usize> Default for ArrayPropertyEditorDefinition<T, N>
 where
-    T: Reflect,
+    T: Reflect + Clone,
 {
     fn default() -> Self {
         Self {
@@ -314,7 +317,7 @@ where
 
 impl<T, const N: usize> PropertyEditorDefinition for ArrayPropertyEditorDefinition<T, N>
 where
-    T: Reflect,
+    T: Reflect + Clone + PartialEq,
 {
     fn value_type_id(&self) -> TypeId {
         TypeId::of::<[T; N]>()
@@ -346,12 +349,14 @@ where
                     ctx.build_context,
                     ctx.property_info,
                     ctx.name_column_width,
+                    ctx.hide_name_column,
                     ctx.base_path.clone(),
                     ctx.has_parent_object,
                 )?;
                 editor
             },
             ctx.name_column_width,
+            false,
             ctx.build_context,
         );
 
@@ -375,6 +380,7 @@ where
             definition_container,
             environment,
             name_column_width,
+            hide_name_column,
             base_path,
             has_parent_object,
         } = ctx;
@@ -431,6 +437,7 @@ where
                             generate_property_string_values,
                             filter: filter.clone(),
                             name_column_width,
+                            hide_name_column,
                             base_path: format!("{base_path}[{index}]"),
                             has_parent_object,
                         })?

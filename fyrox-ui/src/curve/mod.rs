@@ -34,8 +34,6 @@ use crate::{
         parking_lot::{MappedMutexGuard, Mutex, MutexGuard},
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
-        uuid_provider,
         visitor::prelude::*,
         SafeLock,
     },
@@ -63,6 +61,7 @@ use std::{
     cell::{Cell, RefCell},
     sync::mpsc::Sender,
 };
+use uuid::Uuid;
 
 pub mod key;
 
@@ -102,6 +101,7 @@ impl MessageData for CurveEditorMessage {
 
 /// Highlight zone in values space.
 #[derive(Clone, Debug, PartialEq, Visit, Reflect, Default)]
+#[reflect(type_uuid = "88052cf5-4ea5-4a2e-b81a-4aca85e74c55")]
 pub struct HighlightZone {
     pub rect: Rect<f32>,
     pub brush: Brush,
@@ -109,6 +109,12 @@ pub struct HighlightZone {
 
 #[derive(Debug, Default)]
 pub struct CurveTransformCell(Mutex<CurveTransform>);
+
+impl PartialEq for CurveTransformCell {
+    fn eq(&self, other: &Self) -> bool {
+        *self.0.safe_lock() == *other.0.safe_lock()
+    }
+}
 
 impl Clone for CurveTransformCell {
     fn clone(&self) -> Self {
@@ -211,7 +217,7 @@ fn standardize_step(step: f32) -> f32 {
 ///
 /// Since widgets are not mutable during layout and rendering, a CurveTransform
 /// is intended to be used within a [CurveTransformCell] which provides interior mutability.
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct CurveTransform {
     /// Position of the center of the curve editor in the curve coordinate space.
     pub position: Vector2<f32>,
@@ -358,7 +364,8 @@ impl Iterator for StepIterator {
     }
 }
 
-#[derive(Default, Clone, Visit, Reflect, Debug)]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(type_uuid = "4b640057-639e-4f47-9a08-c08d94eca68e")]
 pub struct CurvesContainer {
     curves: Vec<CurveKeyViewContainer>,
 }
@@ -411,8 +418,11 @@ impl CurvesContainer {
     }
 }
 
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "5c7b087e-871e-498d-b064-187b604a37d8"
+)]
 pub struct CurveEditor {
     widget: Widget,
     background_curves: CurvesContainer,
@@ -467,7 +477,8 @@ impl ConstructorProvider<UiNode, UserInterface> for CurveEditor {
 
 crate::define_widget_deref!(CurveEditor);
 
-#[derive(Default, Clone, Visit, Reflect, Debug)]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(type_uuid = "c81d942c-394d-498d-b460-1dc508288ed3")]
 struct ContextMenu {
     widget: RcUiNodeHandle,
     add_key: Handle<MenuItem>,
@@ -484,13 +495,13 @@ struct ContextMenu {
     paste_keys: Handle<MenuItem>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 struct DragEntry {
     key_id: Uuid,
     initial_position: Vector2<f32>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 enum OperationContext {
     DragKeys {
         // In local coordinates.
@@ -522,7 +533,7 @@ impl OperationContext {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 enum Selection {
     Keys { keys: FxHashSet<Uuid> },
     LeftTangent { key_id: Uuid },
@@ -543,8 +554,6 @@ impl Selection {
         Self::Keys { keys }
     }
 }
-
-uuid_provider!(CurveEditor = "5c7b087e-871e-498d-b064-187b604a37d8");
 
 impl Control for CurveEditor {
     fn draw(&self, ctx: &mut DrawingContext) {
@@ -943,7 +952,7 @@ impl Control for CurveEditor {
                             // but when it works, who cares.
                             self.zoom_to_fit_timer = Some(10);
                         } else {
-                            self.zoom_to_fit(&ui.sender);
+                            self.zoom_to_fit(&ui.ui_message_channel.sender);
                         }
 
                         self.invalidate_visual();
@@ -1079,7 +1088,7 @@ impl Control for CurveEditor {
         if let Some(timer) = self.zoom_to_fit_timer.as_mut() {
             *timer = timer.saturating_sub(1);
             if *timer == 0 {
-                self.zoom_to_fit(&ui.sender);
+                self.zoom_to_fit(&ui.ui_message_channel.sender);
                 self.zoom_to_fit_timer = None;
             }
         }

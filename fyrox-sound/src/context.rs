@@ -41,7 +41,6 @@ use fyrox_core::pool::PoolError;
 use fyrox_core::{
     pool::{Handle, Pool},
     reflect::prelude::*,
-    uuid_provider,
     visitor::prelude::*,
     SafeLock,
 };
@@ -52,9 +51,11 @@ use std::{
 use strum_macros::{AsRefStr, EnumString, VariantNames};
 
 /// Distance model defines how volume of sound will decay when distance to listener changes.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Reflect, Visit, AsRefStr, EnumString, VariantNames)]
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Reflect, Visit, Default, AsRefStr, EnumString, VariantNames,
+)]
 #[repr(u32)]
-#[derive(Default)]
+#[reflect(type_uuid = "957f3b00-3f89-438c-b1b7-e841e8d75ba9")]
 pub enum DistanceModel {
     /// No distance attenuation at all.
     None = 0,
@@ -98,8 +99,6 @@ pub enum DistanceModel {
     ExponentDistance = 3,
 }
 
-uuid_provider!(DistanceModel = "957f3b00-3f89-438c-b1b7-e841e8d75ba9");
-
 /// See module docs.
 #[derive(Clone, Default, Debug, Visit)]
 pub struct SoundContext {
@@ -114,7 +113,7 @@ impl PartialEq for SoundContext {
 
 /// A set of flags, that can be used to define what should be skipped during the
 /// serialization of a sound context.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub struct SerializationOptions {
     /// All sources won't be serialized, if set.
     pub skip_sources: bool,
@@ -123,7 +122,8 @@ pub struct SerializationOptions {
 }
 
 /// Internal state of context.
-#[derive(Default, Debug, Clone, Reflect)]
+#[derive(Default, Debug, Clone, PartialEq, Reflect)]
+#[reflect(type_uuid = "10f5a7ce-efe4-4bcc-aabc-c399e8fd1a3c")]
 pub struct State {
     sources: Pool<SoundSource>,
     listener: Listener,

@@ -38,7 +38,7 @@ use crate::{
         visitor::prelude::*,
         BiDirHashMap, ImmutableString, SafeLock,
     },
-    graph::{SceneGraph, SceneGraphNode},
+    graph::{NodeWrapper, SceneGraph},
     scene::{
         self,
         collider::{self},
@@ -371,7 +371,7 @@ fn tile_map_to_collider_shape(
     let tile_map = nodes
         .try_borrow(tile_map.0)
         .ok()?
-        .component_ref::<TileMap>()?;
+        .self_or_field_ref::<TileMap>()?;
 
     let tile_set_resource = tile_map.tile_set()?.data_ref();
     let tile_set = tile_set_resource.as_loaded_ref()?;
@@ -458,6 +458,7 @@ fn isometry2_to_mat4(isometry: &Isometry2<f32>) -> Matrix4<f32> {
 /// methods, mostly for ray casting. You should add physical entities using scene graph nodes, such
 /// as RigidBody, Collider, Joint.
 #[derive(Visit, Reflect)]
+#[reflect(type_uuid = "035cccc1-a098-4b25-bbd6-cac507d6649d")]
 pub struct PhysicsWorld {
     /// A flag that defines whether physics simulation is enabled or not.
     pub enabled: InheritableVariable<bool>,
@@ -517,6 +518,15 @@ pub struct PhysicsWorld {
     #[visit(skip)]
     #[reflect(hidden)]
     debug_render_pipeline: Mutex<DebugRenderPipeline>,
+}
+
+impl PartialEq for PhysicsWorld {
+    fn eq(&self, other: &Self) -> bool {
+        // Silly impl because Rapier does not really leave any other option.
+        self.bodies.len() == other.bodies.len()
+            && self.joints.set.len() == other.joints.set.len()
+            && self.colliders.len() == other.colliders.len()
+    }
 }
 
 impl Clone for PhysicsWorld {
@@ -842,7 +852,10 @@ impl PhysicsWorld {
                 let h = Handle::decode_from_u128(self.colliders.get(handle).unwrap().user_data);
                 pred(
                     h,
-                    graph.node(h).component_ref::<collider::Collider>().unwrap(),
+                    graph
+                        .node(h)
+                        .self_or_field_ref::<collider::Collider>()
+                        .unwrap(),
                 )
             } else {
                 true
@@ -980,7 +993,7 @@ impl PhysicsWorld {
         // 1) `get_mut` is **very** expensive because it forces physics engine to recalculate contacts
         //    and a lot of other stuff, this is why we need `anything_changed` flag.
         if rigid_body_node.native.get() != RigidBodyHandle::invalid() {
-            let mut actions = rigid_body_node.actions.safe_lock();
+            let mut actions = rigid_body_node.actions.inner();
             if rigid_body_node.need_sync_model() || !actions.is_empty() {
                 if let Some(native) = self.bodies.get_mut(rigid_body_node.native.get()) {
                     // Sync native rigid body's properties with scene node's in case if they
@@ -1180,7 +1193,7 @@ impl PhysicsWorld {
                 }
             }
         } else if let Ok(parent_body) =
-            nodes.try_get_component_of_type::<dim2::rigidbody::RigidBody>(collider_node.parent())
+            nodes.try_get_or_field_ref::<dim2::rigidbody::RigidBody>(collider_node.parent())
         {
             if parent_body.native.get() != RigidBodyHandle::invalid() {
                 let rigid_body_native = parent_body.native.get();

@@ -54,7 +54,7 @@ use crate::{
         reflect::prelude::*,
         visitor::{Visit, VisitResult, Visitor},
     },
-    graph::{NodeHandleMap, SceneGraph, SceneGraphNode},
+    graph::{NodeHandleMap, NodeWrapper, SceneGraph},
     material::{MaterialResourceBinding, MaterialTextureBinding},
     resource::model::{Model, ModelResource, ModelResourceExtension},
     scene::{
@@ -78,7 +78,7 @@ use bitflags::bitflags;
 use fxhash::{FxHashMap, FxHashSet};
 use fyrox_material::MaterialResourceExtension;
 use std::{
-    any::{Any, TypeId},
+    any::TypeId,
     fmt::{Debug, Display, Formatter, Write},
     ops::{Deref, Index, IndexMut},
     sync::mpsc::{channel, Receiver, Sender},
@@ -90,7 +90,7 @@ pub mod physics;
 
 /// Graph performance statistics. Allows you to find out "hot" parts of the scene graph, which
 /// parts takes the most time to update.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, PartialEq, Default, Debug)]
 pub struct GraphPerformanceStatistics {
     /// Amount of time that was needed to update global transform, visibility, and every other
     /// property of every object which depends on the state of a parent node.
@@ -126,6 +126,7 @@ pub type NodePool = Pool<Node, NodeContainer>;
 
 /// See module docs.
 #[derive(Reflect)]
+#[reflect(type_uuid = "92b8e89c-3934-4876-a60a-2970286a56f6")]
 pub struct Graph {
     #[reflect(hidden)]
     root: Handle<Node>,
@@ -171,6 +172,12 @@ pub struct Graph {
 
     #[reflect(read_only)]
     instance_id_map: FxHashMap<SceneNodeId, Handle<Node>>,
+}
+
+impl PartialEq for Graph {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root && self.pool == other.pool
+    }
 }
 
 impl Debug for Graph {
@@ -341,12 +348,12 @@ pub enum GraphError {
         /// Type name of the script.
         script_type_name: &'static str,
     },
-    /// There's no script component of the requested type.
-    NoScriptComponent {
+    /// There's no script field of the requested type.
+    NoScriptField {
         /// Handle of the node.
         handle: Handle<Node>,
-        /// Type name of the script component.
-        component_type_name: &'static str,
+        /// Type name of the script field.
+        field_type_name: &'static str,
     },
     /// There's no scene node with the given id.
     UnknownId(SceneNodeId),
@@ -365,13 +372,13 @@ impl Display for GraphError {
                     "There's no script {script_type_name} on the scene node {handle}"
                 )
             }
-            GraphError::NoScriptComponent {
+            GraphError::NoScriptField {
                 handle,
-                component_type_name,
+                field_type_name,
             } => {
                 write!(
                     f,
-                    "There's no script component {component_type_name} on the scene node {handle}"
+                    "There's no script field {field_type_name} on the scene node {handle}"
                 )
             }
             GraphError::UnknownId(id) => {
@@ -537,13 +544,11 @@ impl Graph {
         for (node_handle, node) in self.pair_iter() {
             (node as &dyn Reflect).apply_recursively(
                 &mut |object| {
-                    object.as_any(&mut |any| {
-                        if let Some(handle) = any.downcast_ref::<Handle<Node>>() {
-                            if *handle == target {
-                                references.push(node_handle);
-                            }
+                    if let Some(handle) = object.downcast_ref::<Handle<Node>>() {
+                        if *handle == target {
+                            references.push(node_handle);
                         }
-                    })
+                    }
                 },
                 &[TypeId::of::<UntypedResource>()],
             );
@@ -1906,43 +1911,43 @@ impl Graph {
         Ok(node.try_get_scripts_mut())
     }
 
-    /// Tries to borrow a node and find a component of the given type `C` across **all** available
-    /// scripts of the node. If you want to search a component `C` in a particular script, then use
-    /// [`Self::try_get_script_of`] and then search for component in it.
+    /// Tries to borrow a node and find a field of the given type `C` across **all** available
+    /// scripts of the node. If you want to search a field `C` in a particular script, then use
+    /// [`Self::try_get_script_of`] and then search for field in it.
     #[inline]
-    pub fn try_get_script_component_of<C>(
+    pub fn try_get_script_field_of<C>(
         &self,
         handle: Handle<impl ObjectOrVariant<Node>>,
     ) -> Result<&C, GraphError>
     where
-        C: Any,
+        C: Reflect,
     {
         let handle = handle.to_base();
         let node = self.try_get_node(handle)?;
-        node.try_get_script_component()
-            .ok_or_else(|| GraphError::NoScriptComponent {
+        node.try_get_script_field()
+            .ok_or_else(|| GraphError::NoScriptField {
                 handle,
-                component_type_name: std::any::type_name::<C>(),
+                field_type_name: std::any::type_name::<C>(),
             })
     }
 
-    /// Tries to borrow a node and find a component of the given type `C` across **all** available
-    /// scripts of the node. If you want to search a component `C` in a particular script, then use
-    /// [`Self::try_get_script_of_mut`] and then search for component in it.
+    /// Tries to borrow a node and find a field of the given type `C` across **all** available
+    /// scripts of the node. If you want to search a field `C` in a particular script, then use
+    /// [`Self::try_get_script_of_mut`] and then search for field in it.
     #[inline]
-    pub fn try_get_script_component_of_mut<C>(
+    pub fn try_get_script_field_of_mut<C>(
         &mut self,
         handle: Handle<impl ObjectOrVariant<Node>>,
     ) -> Result<&mut C, GraphError>
     where
-        C: Any,
+        C: Reflect,
     {
         let handle = handle.to_base();
         let node = self.try_get_node_mut(handle)?;
-        node.try_get_script_component_mut()
-            .ok_or_else(|| GraphError::NoScriptComponent {
+        node.try_get_script_field_mut()
+            .ok_or_else(|| GraphError::NoScriptField {
                 handle,
-                component_type_name: std::any::type_name::<C>(),
+                field_type_name: std::any::type_name::<C>(),
             })
     }
 
@@ -2011,8 +2016,7 @@ impl Visit for Graph {
 
 impl SceneGraph for Graph {
     type Prefab = Model;
-    type NodeContainer = NodeContainer;
-    type Node = Node;
+    type NodeWrapper = Node;
 
     /// Create a brief debug summary of the contents of this graph.
     fn summary(&self) -> String {
@@ -2022,35 +2026,39 @@ impl SceneGraph for Graph {
     }
 
     #[inline]
-    fn actual_type_id(&self, handle: Handle<Self::Node>) -> Result<TypeId, PoolError> {
+    fn actual_type_id(&self, handle: Handle<Self::NodeWrapper>) -> Result<TypeId, PoolError> {
         self.pool
             .try_borrow(handle)
             .map(|n| NodeAsAny::as_any(n.0.deref()).type_id())
     }
 
     #[inline]
-    fn root(&self) -> Handle<Self::Node> {
+    fn root(&self) -> Handle<Self::NodeWrapper> {
         self.root
     }
 
     #[inline]
-    fn set_root(&mut self, root: Handle<Self::Node>) {
+    fn set_root(&mut self, root: Handle<Self::NodeWrapper>) {
         self.root = root;
     }
 
     #[inline]
-    fn is_valid_handle(&self, handle: Handle<impl ObjectOrVariant<Self::Node>>) -> bool {
+    fn is_valid_handle(&self, handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) -> bool {
         self.pool.is_valid_handle(handle)
     }
 
     #[inline]
-    fn add_node(&mut self, node: Self::Node) -> Handle<Self::Node> {
+    fn add_node(&mut self, node: Self::NodeWrapper) -> Handle<Self::NodeWrapper> {
         let handle = self.pool.next_free_handle();
         self.add_node_at_handle(node, handle);
         handle
     }
 
-    fn add_node_at_handle(&mut self, mut node: Self::Node, handle: Handle<Self::Node>) {
+    fn add_node_at_handle(
+        &mut self,
+        mut node: Self::NodeWrapper,
+        handle: Handle<Self::NodeWrapper>,
+    ) {
         let children = node.children.clone();
         node.children.clear();
         let script_count = node.scripts.len();
@@ -2087,7 +2095,7 @@ impl SceneGraph for Graph {
     }
 
     #[inline]
-    fn remove_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::Node>>) {
+    fn remove_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) {
         let node_handle = node_handle.to_base();
 
         self.isolate_node(node_handle);
@@ -2112,8 +2120,8 @@ impl SceneGraph for Graph {
     #[inline]
     fn link_nodes(
         &mut self,
-        child: Handle<impl ObjectOrVariant<Self::Node>>,
-        parent: Handle<impl ObjectOrVariant<Self::Node>>,
+        child: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+        parent: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
     ) {
         let child = child.to_base();
         let parent = parent.to_base();
@@ -2129,7 +2137,7 @@ impl SceneGraph for Graph {
     }
 
     #[inline]
-    fn unlink_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::Node>>) {
+    fn unlink_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) {
         let node_handle = node_handle.to_base();
         self.isolate_node(node_handle);
         self.link_nodes(node_handle, self.root);
@@ -2139,7 +2147,7 @@ impl SceneGraph for Graph {
     }
 
     #[inline]
-    fn isolate_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::Node>>) {
+    fn isolate_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) {
         let node_handle = node_handle.to_base();
         // Replace parent handle of child
         let parent_handle = std::mem::replace(&mut self.pool[node_handle].parent, Handle::NONE);
@@ -2157,42 +2165,51 @@ impl SceneGraph for Graph {
     }
 
     #[inline]
-    fn try_get_node(&self, handle: Handle<Self::Node>) -> Result<&Self::Node, PoolError> {
+    fn try_get_node(
+        &self,
+        handle: Handle<Self::NodeWrapper>,
+    ) -> Result<&Self::NodeWrapper, PoolError> {
         self.pool.try_borrow(handle)
     }
 
     #[inline]
     fn try_get_node_mut(
         &mut self,
-        handle: Handle<Self::Node>,
-    ) -> Result<&mut Self::Node, PoolError> {
+        handle: Handle<Self::NodeWrapper>,
+    ) -> Result<&mut Self::NodeWrapper, PoolError> {
         self.pool.try_borrow_mut(handle)
     }
 
-    fn derived_type_ids(&self, handle: Handle<Self::Node>) -> Result<Vec<TypeId>, PoolError> {
+    fn derived_type_ids(
+        &self,
+        handle: Handle<Self::NodeWrapper>,
+    ) -> Result<Vec<TypeId>, PoolError> {
         self.pool
             .try_borrow(handle)
-            .map(|n| Box::deref(&n.0).query_derived_types().to_vec())
+            .map(|n| Box::deref(&n.0).type_info_ref().derived_types.to_vec())
     }
 
-    fn actual_type_name(&self, handle: Handle<Self::Node>) -> Result<&'static str, PoolError> {
+    fn actual_type_name(
+        &self,
+        handle: Handle<Self::NodeWrapper>,
+    ) -> Result<&'static str, PoolError> {
         self.pool
             .try_borrow(handle)
-            .map(|n| n.0.deref().type_name())
+            .map(|n| n.0.deref().type_info_ref().type_name)
     }
 
     #[inline]
-    fn pair_iter(&self) -> impl Iterator<Item = (Handle<Self::Node>, &Self::Node)> {
+    fn pair_iter(&self) -> impl Iterator<Item = (Handle<Self::NodeWrapper>, &Self::NodeWrapper)> {
         self.pool.pair_iter()
     }
 
     #[inline]
-    fn linear_iter(&self) -> impl Iterator<Item = &Self::Node> {
+    fn linear_iter(&self) -> impl Iterator<Item = &Self::NodeWrapper> {
         self.pool.iter()
     }
 
     #[inline]
-    fn linear_iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Node> {
+    fn linear_iter_mut(&mut self) -> impl Iterator<Item = &mut Self::NodeWrapper> {
         self.pool.iter_mut()
     }
 
@@ -2218,7 +2235,6 @@ mod test {
             futures::executor::block_on,
             pool::Handle,
             reflect::prelude::*,
-            type_traits::prelude::*,
             visitor::prelude::*,
         },
         engine::{self, SerializationContext},
@@ -2242,8 +2258,8 @@ mod test {
     use fyrox_resource::untyped::ResourceKind;
     use std::{fs, path::Path, sync::Arc};
 
-    #[derive(Clone, Debug, PartialEq, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "722feb80-a10b-4ee0-8cef-5d1473df8457")]
+    #[derive(Clone, Debug, PartialEq, Reflect, Visit)]
+    #[reflect(type_uuid = "722feb80-a10b-4ee0-8cef-5d1473df8457")]
     struct MyScript {
         foo: String,
         bar: f32,
@@ -2251,8 +2267,8 @@ mod test {
 
     impl ScriptTrait for MyScript {}
 
-    #[derive(Clone, Debug, PartialEq, Reflect, Visit, TypeUuidProvider, ComponentProvider)]
-    #[type_uuid(id = "722feb80-a10b-4ee0-8cef-5d1473df8458")]
+    #[derive(Clone, Debug, PartialEq, Reflect, Visit)]
+    #[reflect(type_uuid = "722feb80-a10b-4ee0-8cef-5d1473df8458")]
     struct MyOtherScript {
         baz: u32,
         foobar: Vec<u32>,

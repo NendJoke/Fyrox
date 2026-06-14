@@ -25,13 +25,12 @@
 #![allow(clippy::unnecessary_to_owned)] // false-positive
 
 use crate::core::{
-    algebra::Vector2, rectpack::RectPacker, reflect::prelude::*, uuid::Uuid, uuid_provider,
-    visitor::prelude::*, TypeUuidProvider,
+    algebra::Vector2, rectpack::RectPacker, reflect::prelude::*, visitor::prelude::*,
 };
 use crate::font::loader::FontImportOptions;
 use fxhash::FxHashMap;
+use fyrox_core::err;
 use fyrox_core::math::Rect;
-use fyrox_core::{err, uuid};
 use fyrox_resource::manager::ResourceManager;
 use fyrox_resource::state::LoadError;
 use fyrox_resource::untyped::ResourceKind;
@@ -63,7 +62,7 @@ enum FontError {
 
 /// The geometric data specifying where to find a glyph on a font atlas
 /// texture for rendering text.
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FontGlyph {
     /// The vertical position of the glyph relative to other glyphs on the line, measured in font pixels.
     /// This would be 0 for a glyph with its bottom directly on the baseline, but may be
@@ -93,7 +92,7 @@ pub struct FontGlyph {
 }
 
 /// Page is a storage for rasterized glyphs.
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 pub struct Page {
     /// The texture data for rendering some glyphs.
     /// When new glyphs are required, this data may be modified if space
@@ -124,7 +123,7 @@ impl Debug for Page {
 
 /// Atlas is a storage for glyphs of a particular size, each atlas could have any number of pages to
 /// store the rasterized glyphs.
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, PartialEq, Debug)]
 pub struct Atlas {
     /// The geometric data used for rendering glyphs from the pages of this atlas,
     /// such as the size of each glyph, the index of its page, and the UVs of the corners
@@ -332,6 +331,7 @@ impl Atlas {
 
 /// A font resource and the associated data required for rendering glyphs from the font.
 #[derive(Default, Clone, Debug, Reflect, Visit)]
+#[reflect(type_uuid = "692fec79-103a-483c-bb0b-9fc3a349cb48")]
 pub struct Font {
     /// The source font data, such as might come from a ttf file.
     #[reflect(hidden)]
@@ -361,13 +361,18 @@ pub struct Font {
     pub fallbacks: Vec<Option<FontResource>>,
 }
 
-uuid_provider!(Font = "692fec79-103a-483c-bb0b-9fc3a349cb48");
+impl PartialEq for Font {
+    fn eq(&self, other: &Self) -> bool {
+        self.atlases == other.atlases
+            && self.page_size == other.page_size
+            && self.bold == other.bold
+            && self.italic == other.italic
+            && self.bold_italic == other.bold_italic
+            && self.fallbacks == other.fallbacks
+    }
+}
 
 impl ResourceData for Font {
-    fn type_uuid(&self) -> Uuid {
-        <Self as TypeUuidProvider>::type_uuid()
-    }
-
     fn save(&mut self, _path: &Path) -> Result<(), Box<dyn Error>> {
         Ok(())
     }

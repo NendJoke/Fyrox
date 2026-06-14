@@ -27,7 +27,6 @@ use crate::{
         log::{Log, MessageKind},
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
         variable::InheritableVariable,
         visitor::prelude::*,
     },
@@ -143,13 +142,14 @@ impl BoundValueCollectionExt for BoundValueCollection {
 /// Animation player is a node that contains multiple animations. It updates and plays all the animations.
 /// The node could be a source of animations for animation blending state machines. To learn more about
 /// animations, see [`Animation`] docs.
-#[derive(Visit, Reflect, Clone, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Visit, PartialEq, Reflect, Clone, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "44d1c94e-354f-4f9a-b918-9d31c28aa16a"
+)]
 pub struct AnimationPlayer {
     widget: Widget,
-    #[component(include)]
     pub(crate) animations: InheritableVariable<AnimationContainer>,
-    #[component(include)]
     auto_apply: bool,
 }
 
@@ -214,12 +214,6 @@ impl AnimationPlayer {
 
     fn find_animation(&mut self, name: &str) -> Option<&mut Animation> {
         self.animations.find_by_name_mut(name).map(|(_, a)| a)
-    }
-}
-
-impl TypeUuidProvider for AnimationPlayer {
-    fn type_uuid() -> Uuid {
-        uuid!("44d1c94e-354f-4f9a-b918-9d31c28aa16a")
     }
 }
 

@@ -29,17 +29,17 @@ pub mod prelude {
 }
 
 use fxhash::FxHashMap;
-use fyrox_core::pool::{ObjectOrVariant, PayloadContainer, PoolError};
+use fyrox_core::pool::{ObjectOrVariant, PoolError};
 use fyrox_core::reflect::ReflectHandle;
+use fyrox_core::uuid::Uuid;
 use fyrox_core::{
     log::{Log, MessageKind},
     pool::Handle,
     reflect::prelude::*,
     variable::{self, InheritableVariable},
-    ComponentProvider, NameProvider, Uuid,
+    NameProvider,
 };
 use fyrox_resource::{untyped::UntypedResource, Resource, TypedResourceData};
-use std::any::Any;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use std::{
@@ -48,6 +48,7 @@ use std::{
 };
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Reflect)]
+#[reflect(type_uuid = "057d3a49-913a-4f83-9203-549a5c2872aa")]
 #[repr(u32)]
 pub enum NodeMapping {
     UseNames = 0,
@@ -203,7 +204,7 @@ where
     #[inline]
     pub fn remap_handles(&self, node: &mut N, ignored_types: &[TypeId]) {
         let name = node.name().to_string();
-        node.as_reflect_mut(&mut |node| self.remap_handles_any(node, &name, ignored_types));
+        self.remap_handles_any(node, &name, ignored_types);
     }
 
     pub fn remap_handles_any(
@@ -218,84 +219,77 @@ where
 
         let mut mapped = false;
 
-        entity.downcast_mut::<Handle<N>>(&mut |handle| {
-            if let Some(handle) = handle {
-                if handle.is_some() && !self.try_map(handle) {
-                    Log::warn(format!(
-                        "Failed to remap handle {} of node {}!",
-                        *handle, node_name
-                    ));
-                }
-                mapped = true;
+        if let Some(handle) = entity.downcast_mut::<Handle<N>>() {
+            if handle.is_some() && !self.try_map(handle) {
+                Log::warn(format!(
+                    "Failed to remap handle {} of node {}!",
+                    *handle, node_name
+                ));
             }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
         }
 
         // Handle derived entities handles.
-        entity.as_handle_mut(&mut |handle| {
-            if let Some(handle) = handle {
-                if handle.query_derived_types().contains(&TypeId::of::<N>())
-                    && handle.reflect_is_some()
-                    && !self.try_map_reflect(handle)
-                {
-                    Log::warn(format!(
-                        "Failed to remap handle {}:{} of node {}!",
-                        handle.reflect_index(),
-                        handle.reflect_generation(),
-                        node_name
-                    ));
-                }
-                mapped = true;
+        if let Some(handle) = entity.as_handle_mut() {
+            if handle
+                .type_info_ref()
+                .derived_types
+                .contains(&TypeId::of::<N>())
+                && handle.reflect_is_some()
+                && !self.try_map_reflect(handle)
+            {
+                Log::warn(format!(
+                    "Failed to remap handle {}:{} of node {}!",
+                    handle.reflect_index(),
+                    handle.reflect_generation(),
+                    node_name
+                ));
             }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
         }
 
-        entity.as_inheritable_variable_mut(&mut |inheritable| {
-            if let Some(inheritable) = inheritable {
-                // In case of inheritable variable we must take inner value and do not mark variables as modified.
-                self.remap_handles_any(inheritable.inner_value_mut(), node_name, ignored_types);
+        if let Some(inheritable) = entity.as_inheritable_variable_mut() {
+            // In case of inheritable variable we must take inner value and do not mark variables as modified.
+            self.remap_handles_any(inheritable.inner_value_mut(), node_name, ignored_types);
 
-                mapped = true;
-            }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
         }
 
-        entity.as_array_mut(&mut |array| {
-            if let Some(array) = array {
-                // Look in every array item.
-                for i in 0..array.reflect_len() {
-                    // Sparse arrays (like Pool) could have empty entries.
-                    if let Some(item) = array.reflect_index_mut(i) {
-                        self.remap_handles_any(item, node_name, ignored_types);
-                    }
+        if let Some(array) = entity.as_array_mut() {
+            // Look in every array item.
+            for i in 0..array.reflect_len() {
+                // Sparse arrays (like Pool) could have empty entries.
+                if let Some(item) = array.reflect_index_mut(i) {
+                    self.remap_handles_any(item, node_name, ignored_types);
                 }
-                mapped = true;
             }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
         }
 
-        entity.as_hash_map_mut(&mut |hash_map| {
-            if let Some(hash_map) = hash_map {
-                for i in 0..hash_map.reflect_len() {
-                    if let Some(item) = hash_map.reflect_get_nth_value_mut(i) {
-                        self.remap_handles_any(item, node_name, ignored_types);
-                    }
+        if let Some(hash_map) = entity.as_hash_map_mut() {
+            for i in 0..hash_map.reflect_len() {
+                if let Some(item) = hash_map.reflect_get_nth_value_mut(i) {
+                    self.remap_handles_any(item, node_name, ignored_types);
                 }
-                mapped = true;
             }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
@@ -304,12 +298,7 @@ where
         // Continue remapping recursively for every compound field.
         entity.fields_mut(&mut |fields| {
             for field_info_mut in fields {
-                field_info_mut
-                    .value
-                    .field_value_as_reflect_mut()
-                    .as_reflect_mut(&mut |field| {
-                        self.remap_handles_any(field, node_name, ignored_types)
-                    })
+                self.remap_handles_any(field_info_mut.value, node_name, ignored_types)
             }
         })
     }
@@ -317,9 +306,7 @@ where
     #[inline]
     pub fn remap_inheritable_handles(&self, node: &mut N, ignored_types: &[TypeId]) {
         let name = node.name().to_string();
-        node.as_reflect_mut(&mut |node| {
-            self.remap_inheritable_handles_internal(node, &name, false, ignored_types)
-        });
+        self.remap_inheritable_handles_internal(node, &name, false, ignored_types);
     }
 
     fn remap_inheritable_handles_internal(
@@ -335,107 +322,100 @@ where
 
         let mut mapped = false;
 
-        entity.as_inheritable_variable_mut(&mut |result| {
-            if let Some(inheritable) = result {
-                // In case of inheritable variable we must take inner value and do not mark variables as modified.
-                if !inheritable.is_modified() {
-                    self.remap_inheritable_handles_internal(
-                        inheritable.inner_value_mut(),
-                        node_name,
-                        // Raise mapping flag, any handle in inner value will be mapped. The flag is propagated
-                        // to unlimited depth.
-                        true,
-                        ignored_types,
-                    );
-                }
-                mapped = true;
+        if let Some(inheritable) = entity.as_inheritable_variable_mut() {
+            // In case of inheritable variable we must take inner value and do not mark variables as modified.
+            if !inheritable.is_modified() {
+                self.remap_inheritable_handles_internal(
+                    inheritable.inner_value_mut(),
+                    node_name,
+                    // Raise mapping flag, any handle in inner value will be mapped. The flag is propagated
+                    // to unlimited depth.
+                    true,
+                    ignored_types,
+                );
             }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
         }
 
-        entity.downcast_mut::<Handle<N>>(&mut |result| {
-            if let Some(handle) = result {
-                if do_map && handle.is_some() && !self.try_map(handle) {
-                    Log::warn(format!(
-                        "Failed to remap handle {} of node {}!",
-                        *handle, node_name
-                    ));
-                }
-                mapped = true;
+        if let Some(handle) = entity.downcast_mut::<Handle<N>>() {
+            if do_map && handle.is_some() && !self.try_map(handle) {
+                Log::warn(format!(
+                    "Failed to remap handle {} of node {}!",
+                    *handle, node_name
+                ));
             }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
         }
 
         // Handle derived entities handles.
-        entity.as_handle_mut(&mut |handle| {
-            if let Some(handle) = handle {
-                if do_map
-                    && handle.query_derived_types().contains(&TypeId::of::<N>())
-                    && handle.reflect_is_some()
-                    && !self.try_map_reflect(handle)
-                {
-                    Log::warn(format!(
-                        "Failed to remap handle {}:{} of node {}!",
-                        handle.reflect_index(),
-                        handle.reflect_generation(),
-                        node_name
-                    ));
-                }
-                mapped = true;
+        if let Some(handle) = entity.as_handle_mut() {
+            if do_map
+                && handle
+                    .type_info_ref()
+                    .derived_types
+                    .contains(&TypeId::of::<N>())
+                && handle.reflect_is_some()
+                && !self.try_map_reflect(handle)
+            {
+                Log::warn(format!(
+                    "Failed to remap handle {}:{} of node {}!",
+                    handle.reflect_index(),
+                    handle.reflect_generation(),
+                    node_name
+                ));
             }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
         }
 
-        entity.as_array_mut(&mut |result| {
-            if let Some(array) = result {
-                // Look in every array item.
-                for i in 0..array.reflect_len() {
-                    // Sparse arrays (like Pool) could have empty entries.
-                    if let Some(item) = array.reflect_index_mut(i) {
-                        self.remap_inheritable_handles_internal(
-                            item,
-                            node_name,
-                            // Propagate mapping flag - it means that we're inside inheritable variable. In this
-                            // case we will map handles.
-                            do_map,
-                            ignored_types,
-                        );
-                    }
+        if let Some(array) = entity.as_array_mut() {
+            // Look in every array item.
+            for i in 0..array.reflect_len() {
+                // Sparse arrays (like Pool) could have empty entries.
+                if let Some(item) = array.reflect_index_mut(i) {
+                    self.remap_inheritable_handles_internal(
+                        item,
+                        node_name,
+                        // Propagate mapping flag - it means that we're inside inheritable variable. In this
+                        // case we will map handles.
+                        do_map,
+                        ignored_types,
+                    );
                 }
-                mapped = true;
             }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
         }
 
-        entity.as_hash_map_mut(&mut |result| {
-            if let Some(hash_map) = result {
-                for i in 0..hash_map.reflect_len() {
-                    if let Some(item) = hash_map.reflect_get_nth_value_mut(i) {
-                        self.remap_inheritable_handles_internal(
-                            item,
-                            node_name,
-                            // Propagate mapping flag - it means that we're inside inheritable variable. In this
-                            // case we will map handles.
-                            do_map,
-                            ignored_types,
-                        );
-                    }
+        if let Some(hash_map) = entity.as_hash_map_mut() {
+            for i in 0..hash_map.reflect_len() {
+                if let Some(item) = hash_map.reflect_get_nth_value_mut(i) {
+                    self.remap_inheritable_handles_internal(
+                        item,
+                        node_name,
+                        // Propagate mapping flag - it means that we're inside inheritable variable. In this
+                        // case we will map handles.
+                        do_map,
+                        ignored_types,
+                    );
                 }
-                mapped = true;
             }
-        });
+            mapped = true;
+        }
 
         if mapped {
             return;
@@ -445,7 +425,7 @@ where
         entity.fields_mut(&mut |fields| {
             for field_info_mut in fields {
                 self.remap_inheritable_handles_internal(
-                    field_info_mut.value.field_value_as_reflect_mut(),
+                    field_info_mut.value,
                     node_name,
                     // Propagate mapping flag - it means that we're inside inheritable variable. In this
                     // case we will map handles.
@@ -458,23 +438,32 @@ where
 }
 
 fn reset_property_modified_flag(entity: &mut dyn Reflect, path: &str) {
-    entity.as_reflect_mut(&mut |entity| {
-        entity.resolve_path_mut(path, &mut |result| {
-            variable::mark_inheritable_properties_non_modified(
-                result.unwrap(),
-                &[TypeId::of::<UntypedResource>()],
-            );
-        })
+    entity.resolve_path_mut(path, &mut |result| {
+        variable::mark_inheritable_properties_non_modified(
+            result.unwrap(),
+            &[TypeId::of::<UntypedResource>()],
+        );
     })
 }
 
-pub trait SceneGraphNode: ComponentProvider + Reflect + NameProvider + Clone + 'static {
+pub trait NodeWrapper: Reflect + NameProvider + Clone {
     type Base: Clone;
-    type SceneGraph: SceneGraph<Node = Self>;
+    type SceneGraph: SceneGraph<NodeWrapper = Self>;
     type ResourceData: PrefabData<Graph = Self::SceneGraph>;
 
+    /// Returns a shared reference to the instance of the actual node type of this wrapper.
+    fn inner_ref(&self) -> &dyn Reflect;
+
+    /// Returns a mutable reference to the instance of the actual node type of this wrapper.
+    fn inner_mut(&mut self) -> &mut dyn Reflect;
+
+    /// Returns a shared reference to the common part of all nodes. Typically, it is a structure
+    /// that contains node's transform, name, etc.
     fn base(&self) -> &Self::Base;
+
+    /// Set the base of this node.
     fn set_base(&mut self, base: Self::Base);
+
     fn is_resource_instance_root(&self) -> bool;
     fn original_handle_in_resource(&self) -> Handle<Self>;
     fn set_original_handle_in_resource(&mut self, handle: Handle<Self>);
@@ -561,38 +550,35 @@ pub trait SceneGraphNode: ComponentProvider + Reflect + NameProvider + Clone + '
             let mut parent_value = None;
 
             // Find and clone parent's value first.
-            parent.as_reflect(&mut |parent| {
-                parent.resolve_path(path, &mut |result| match result {
-                    Ok(parent_field) => parent_field.as_inheritable_variable(&mut |parent_field| {
-                        if let Some(parent_inheritable) = parent_field {
-                            parent_value = Some(parent_inheritable.clone_value_box());
+            parent
+                .inner_ref()
+                .resolve_path(path, &mut |result| match result {
+                    Ok(parent_field) => {
+                        if let Some(parent_inheritable) = parent_field.as_inheritable_variable() {
+                            parent_value = parent_inheritable.inner_value_ref().try_clone_box();
                         }
-                    }),
+                    }
                     Err(e) => Log::err(format!(
                         "Failed to resolve parent path {path}. Reason: {e:?}"
                     )),
-                })
-            });
+                });
 
             // Check whether the child's field is inheritable and modified.
             let mut need_revert = false;
 
-            self.as_reflect_mut(&mut |child| {
-                child.resolve_path_mut(path, &mut |result| match result {
+            self.inner_mut()
+                .resolve_path_mut(path, &mut |result| match result {
                     Ok(child_field) => {
-                        child_field.as_inheritable_variable_mut(&mut |child_inheritable| {
-                            if let Some(child_inheritable) = child_inheritable {
-                                need_revert = child_inheritable.is_modified();
-                            } else {
-                                Log::err(format!("Property {path} is not inheritable!"))
-                            }
-                        })
+                        if let Some(child_inheritable) = child_field.as_inheritable_variable_mut() {
+                            need_revert = child_inheritable.is_modified();
+                        } else {
+                            Log::err(format!("Property {path} is not inheritable!"))
+                        }
                     }
                     Err(e) => Log::err(format!(
                         "Failed to resolve child path {path}. Reason: {e:?}"
                     )),
                 });
-            });
 
             // Try to apply it to the child.
             if need_revert {
@@ -600,26 +586,25 @@ pub trait SceneGraphNode: ComponentProvider + Reflect + NameProvider + Clone + '
                     let mut was_set = false;
 
                     let mut parent_value = Some(parent_value);
-                    self.as_reflect_mut(&mut |child| {
-                        child.set_field_by_path(
-                            path,
-                            parent_value.take().unwrap(),
-                            &mut |result| match result {
-                                Ok(old_value) => {
-                                    previous_value = Some(old_value);
 
-                                    was_set = true;
-                                }
-                                Err(_) => Log::err(format!(
-                                    "Failed to revert property {path}. Reason: no such property!"
-                                )),
-                            },
-                        );
-                    });
+                    self.inner_mut().set_field_by_path(
+                        path,
+                        parent_value.take().unwrap(),
+                        &mut |result| match result {
+                            Ok(old_value) => {
+                                previous_value = Some(old_value);
+
+                                was_set = true;
+                            }
+                            Err(_) => Log::err(format!(
+                                "Failed to revert property {path}. Reason: no such property!"
+                            )),
+                        },
+                    );
 
                     if was_set {
                         // Reset modified flag.
-                        reset_property_modified_flag(self, path);
+                        reset_property_modified_flag(self.inner_mut(), path);
                     }
                 }
             }
@@ -628,24 +613,24 @@ pub trait SceneGraphNode: ComponentProvider + Reflect + NameProvider + Clone + '
         previous_value
     }
 
-    /// Tries to borrow a component of given type.
+    /// Tries to downcast self to the specified type, or if it is not possible, tries to find a
+    /// field of the specified type.
     #[inline]
-    fn component_ref<T: Any>(&self) -> Option<&T> {
-        ComponentProvider::query_component_ref(self, TypeId::of::<T>())
-            .and_then(|c| c.downcast_ref())
+    fn self_or_field_ref<T: Reflect>(&self) -> Option<&T> {
+        self.inner_ref().self_or_field_ref::<T>()
     }
 
-    /// Tries to borrow a component of given type.
+    /// Tries to downcast self to the specified type, or if it is not possible, tries to find a
+    /// field of the specified type.
     #[inline]
-    fn component_mut<T: Any>(&mut self) -> Option<&mut T> {
-        ComponentProvider::query_component_mut(self, TypeId::of::<T>())
-            .and_then(|c| c.downcast_mut())
+    fn self_or_field_mut<T: Reflect>(&mut self) -> Option<&mut T> {
+        self.inner_mut().self_or_field_mut::<T>()
     }
 
-    /// Checks if the node has a component of given type.
+    /// Checks if the node is an instance of the given type or has a field of the same type.
     #[inline]
-    fn has_component<T: Any>(&self) -> bool {
-        self.component_ref::<T>().is_some()
+    fn is_or_has_field<T: Reflect>(&self) -> bool {
+        self.self_or_field_ref::<T>().is_some()
     }
 }
 
@@ -674,119 +659,120 @@ impl<N> Default for LinkScheme<N> {
 /// SceneGraph is a trait for all scene graphs to implement.
 pub trait SceneGraph: 'static {
     type Prefab: PrefabData<Graph = Self>;
-    type NodeContainer: PayloadContainer<Element = Self::Node>;
-    type Node: SceneGraphNode<SceneGraph = Self, ResourceData = Self::Prefab>;
+    type NodeWrapper: NodeWrapper<SceneGraph = Self, ResourceData = Self::Prefab>;
 
     /// Generate a string that briefly summarizes the content of the graph for debugging.
     fn summary(&self) -> String;
 
     /// Returns actual type id of the node.
-    fn actual_type_id(&self, handle: Handle<Self::Node>) -> Result<TypeId, PoolError>;
+    fn actual_type_id(&self, handle: Handle<Self::NodeWrapper>) -> Result<TypeId, PoolError>;
 
     /// Returns actual type name of the node.
-    fn actual_type_name(&self, handle: Handle<Self::Node>) -> Result<&'static str, PoolError>;
+    fn actual_type_name(
+        &self,
+        handle: Handle<Self::NodeWrapper>,
+    ) -> Result<&'static str, PoolError>;
 
     /// Returns a list of derived type ids of the node.
-    fn derived_type_ids(&self, handle: Handle<Self::Node>) -> Result<Vec<TypeId>, PoolError>;
+    fn derived_type_ids(&self, handle: Handle<Self::NodeWrapper>)
+        -> Result<Vec<TypeId>, PoolError>;
 
     /// Returns a handle of the root node of the graph.
-    fn root(&self) -> Handle<Self::Node>;
+    fn root(&self) -> Handle<Self::NodeWrapper>;
 
     /// Sets the new root of the graph. If used incorrectly, it may create isolated sub-graphs.
-    fn set_root(&mut self, root: Handle<Self::Node>);
+    fn set_root(&mut self, root: Handle<Self::NodeWrapper>);
 
     /// Tries to borrow a node, returns Ok(node) if the handle is valid, Err(...) - otherwise.
-    fn try_get_node(&self, handle: Handle<Self::Node>) -> Result<&Self::Node, PoolError>;
+    fn try_get_node(
+        &self,
+        handle: Handle<Self::NodeWrapper>,
+    ) -> Result<&Self::NodeWrapper, PoolError>;
 
     /// Tries to borrow a node, returns Ok(node) if the handle is valid, Err(...) - otherwise.
     fn try_get_node_mut(
         &mut self,
-        handle: Handle<Self::Node>,
-    ) -> Result<&mut Self::Node, PoolError>;
+        handle: Handle<Self::NodeWrapper>,
+    ) -> Result<&mut Self::NodeWrapper, PoolError>;
 
     /// Checks whether the given node handle is valid or not.
-    fn is_valid_handle(&self, handle: Handle<impl ObjectOrVariant<Self::Node>>) -> bool;
+    fn is_valid_handle(&self, handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) -> bool;
 
     /// Adds a new node to the graph.
-    fn add_node(&mut self, node: Self::Node) -> Handle<Self::Node>;
+    fn add_node(&mut self, node: Self::NodeWrapper) -> Handle<Self::NodeWrapper>;
 
     /// Adds a new node to the graph at the given handle.
-    fn add_node_at_handle(&mut self, node: Self::Node, handle: Handle<Self::Node>);
+    fn add_node_at_handle(&mut self, node: Self::NodeWrapper, handle: Handle<Self::NodeWrapper>);
 
     /// Destroys the node and its children recursively.
-    fn remove_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::Node>>);
+    fn remove_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>);
 
     /// Links specified child with specified parent.
     fn link_nodes(
         &mut self,
-        child: Handle<impl ObjectOrVariant<Self::Node>>,
-        parent: Handle<impl ObjectOrVariant<Self::Node>>,
+        child: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+        parent: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
     );
 
     /// Unlinks specified node from its parent and attaches it to root graph node.
-    fn unlink_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::Node>>);
+    fn unlink_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>);
 
     /// Detaches the node from its parent, making the node unreachable from any other node in the
     /// graph.
-    fn isolate_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::Node>>);
+    fn isolate_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>);
 
     /// Creates new iterator that iterates over internal collection giving (handle; node) pairs.
-    fn pair_iter(&self) -> impl Iterator<Item = (Handle<Self::Node>, &Self::Node)>;
+    fn pair_iter(&self) -> impl Iterator<Item = (Handle<Self::NodeWrapper>, &Self::NodeWrapper)>;
 
     /// Creates an iterator that has linear iteration order over internal collection
     /// of nodes. It does *not* perform any tree traversal!
-    fn linear_iter(&self) -> impl Iterator<Item = &Self::Node>;
+    fn linear_iter(&self) -> impl Iterator<Item = &Self::NodeWrapper>;
 
     /// Creates an iterator that has linear iteration order over internal collection
     /// of nodes. It does *not* perform any tree traversal!
-    fn linear_iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Node>;
+    fn linear_iter_mut(&mut self) -> impl Iterator<Item = &mut Self::NodeWrapper>;
 
     /// Tries to borrow a graph node by the given handle. This method accepts both type-agnostic
-    /// container (read - [`Self::Node`]) handles and the actual node type handles. For example,
+    /// container (read - [`Self::NodeWrapper`]) handles and the actual node type handles. For example,
     /// if the container type is `Node` (holds `Box<dyn NodeTrait>`) and there's a `SpecificNode`
     /// (implements the `NodeTrait`), then this method can accept both `Handle<Node>` and
     /// `Handle<SpecificNode>`. Internally, this method will try to downcast the container to
-    /// the specified type (which may fail).
-    ///
-    /// Also, in most cases, the implementation will also provide access to inner components of the
-    /// node. This means that if a node implements [`ComponentProvider`] trait and there's a field
-    /// of type `T` in the actual node type, then this method will at first try to downcast the
-    /// node to the given type and on failure will try to find a component of the given type.
-    fn try_get<U: ObjectOrVariant<Self::Node>>(&self, handle: Handle<U>) -> Result<&U, PoolError>;
+    /// the specified type (which may fail). If the downcast is failed, then the implementation will
+    /// also search for the field of the specified type in the node.
+    fn try_get<U: ObjectOrVariant<Self::NodeWrapper>>(
+        &self,
+        handle: Handle<U>,
+    ) -> Result<&U, PoolError>;
 
     /// Tries to borrow a graph node by the given handle. This method accepts both type-agnostic
-    /// container (read - [`Self::Node`]) handles and the actual node type handles. For example,
+    /// container (read - [`Self::NodeWrapper`]) handles and the actual node type handles. For example,
     /// if the container type is `Node` (holds `Box<dyn NodeTrait>`) and there's a `SpecificNode`
     /// (implements the `NodeTrait`), then this method can accept both `Handle<Node>` and
     /// `Handle<SpecificNode>`. Internally, this method will try to downcast the container to
-    /// the specified type (which may fail).
-    ///
-    /// Also, in most cases, the implementation will also provide access to inner components of the
-    /// node. This means that if a node implements [`ComponentProvider`] trait and there's a field
-    /// of type `T` in the actual node type, then this method will at first try to downcast the
-    /// node to the given type and on failure will try to find a component of the given type.
-    fn try_get_mut<U: ObjectOrVariant<Self::Node>>(
+    /// the specified type (which may fail). If the downcast is failed, then the implementation will
+    /// also search for the field of the specified type in the node.
+    fn try_get_mut<U: ObjectOrVariant<Self::NodeWrapper>>(
         &mut self,
         handle: Handle<U>,
     ) -> Result<&mut U, PoolError>;
 
     /// Borrows a node by its handle.
-    fn node(&self, handle: Handle<Self::Node>) -> &Self::Node {
+    fn node(&self, handle: Handle<Self::NodeWrapper>) -> &Self::NodeWrapper {
         self.try_get_node(handle).unwrap()
     }
 
     /// Borrows a node by its handle.
-    fn node_mut(&mut self, handle: Handle<Self::Node>) -> &mut Self::Node {
+    fn node_mut(&mut self, handle: Handle<Self::NodeWrapper>) -> &mut Self::NodeWrapper {
         self.try_get_node_mut(handle).unwrap()
     }
 
     /// Tries to borrow a node, returns Some(node) if the uuid is valid, None - otherwise.
-    fn try_get_node_by_uuid(&self, uuid: Uuid) -> Option<&Self::Node> {
+    fn try_get_node_by_uuid(&self, uuid: Uuid) -> Option<&Self::NodeWrapper> {
         self.linear_iter().find(|n| n.instance_id() == uuid)
     }
 
     /// Tries to borrow a node, returns Some(node) if the uuid is valid, None - otherwise.
-    fn try_get_node_by_uuid_mut(&mut self, uuid: Uuid) -> Option<&mut Self::Node> {
+    fn try_get_node_by_uuid_mut(&mut self, uuid: Uuid) -> Option<&mut Self::NodeWrapper> {
         self.linear_iter_mut().find(|n| n.instance_id() == uuid)
     }
 
@@ -818,9 +804,9 @@ pub trait SceneGraph: 'static {
     #[allow(clippy::unnecessary_to_owned)] // False-positive
     fn change_hierarchy_root(
         &mut self,
-        prev_root: Handle<impl ObjectOrVariant<Self::Node>>,
-        new_root: Handle<impl ObjectOrVariant<Self::Node>>,
-    ) -> LinkScheme<Self::Node> {
+        prev_root: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+        new_root: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+    ) -> LinkScheme<Self::NodeWrapper> {
         let prev_root = prev_root.to_base();
         let new_root = new_root.to_base();
 
@@ -858,7 +844,7 @@ pub trait SceneGraph: 'static {
     /// Applies the given link scheme to the graph, basically reverting graph structure to the one
     /// that was before the call of [`Self::change_hierarchy_root`].
     #[inline]
-    fn apply_link_scheme(&mut self, mut scheme: LinkScheme<Self::Node>) {
+    fn apply_link_scheme(&mut self, mut scheme: LinkScheme<Self::NodeWrapper>) {
         for (child, parent) in scheme.links.drain(..) {
             if parent.is_some() {
                 self.link_nodes(child, parent);
@@ -873,7 +859,7 @@ pub trait SceneGraph: 'static {
 
     /// Removes all the nodes from the given slice.
     #[inline]
-    fn remove_nodes(&mut self, nodes: &[Handle<impl ObjectOrVariant<Self::Node>>]) {
+    fn remove_nodes(&mut self, nodes: &[Handle<impl ObjectOrVariant<Self::NodeWrapper>>]) {
         for &node in nodes {
             if self.is_valid_handle(node) {
                 self.remove_node(node)
@@ -881,46 +867,44 @@ pub trait SceneGraph: 'static {
         }
     }
 
-    /// Tries to borrow a node and fetch its component of specified type.
+    /// Tries to borrow a node at the given handle and downcast it to the specified type. If downcasting
+    /// it is not possible, tries to find a field of the specified type.
     #[inline]
-    fn try_get_of_type<T>(&self, handle: Handle<Self::Node>) -> Result<&T, PoolError>
+    fn try_get_of_type<T>(&self, handle: Handle<Self::NodeWrapper>) -> Result<&T, PoolError>
     where
-        T: 'static,
+        T: Reflect,
     {
-        self.try_get_node(handle)
-            .and_then(|n| {
-                n.query_component_ref(TypeId::of::<T>())
-                    .ok_or(PoolError::NoSuchComponent(handle.into()))
-            })
-            .and_then(|c| {
-                c.downcast_ref()
-                    .ok_or(PoolError::InvalidType(handle.into()))
-            })
+        self.try_get_node(handle).and_then(|n| {
+            n.inner_ref()
+                .self_or_field_ref()
+                .ok_or(PoolError::NoSuchField(handle.into()))
+        })
     }
 
-    /// Tries to mutably borrow a node and fetch its component of specified type.
+    /// Tries to mutably borrow a node at the given handle and downcast it to the specified type. If downcasting
+    /// it is not possible, tries to find a field of the specified type.
     #[inline]
-    fn try_get_mut_of_type<T>(&mut self, handle: Handle<Self::Node>) -> Result<&mut T, PoolError>
+    fn try_get_mut_of_type<T>(
+        &mut self,
+        handle: Handle<Self::NodeWrapper>,
+    ) -> Result<&mut T, PoolError>
     where
-        T: 'static,
+        T: Reflect,
     {
-        self.try_get_node_mut(handle)
-            .and_then(|n| {
-                n.query_component_mut(TypeId::of::<T>())
-                    .ok_or(PoolError::NoSuchComponent(handle.into()))
-            })
-            .and_then(|c| {
-                c.downcast_mut()
-                    .ok_or(PoolError::InvalidType(handle.into()))
-            })
+        self.try_get_node_mut(handle).and_then(|n| {
+            n.inner_mut()
+                .self_or_field_mut()
+                .ok_or(PoolError::NoSuchField(handle.into()))
+        })
     }
 
-    /// Tries to borrow a node by the given handle and checks if it has a component of the specified
-    /// type.
+    /// Tries to borrow a node by the given handle and checks if it is possible to downcast the node
+    /// to the specified type. If the downcasting is not possible, this method tries to find a field
+    /// of the given type.
     #[inline]
-    fn has_component<T>(&self, handle: Handle<impl ObjectOrVariant<Self::Node>>) -> bool
+    fn is_or_has_field<T>(&self, handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) -> bool
     where
-        T: 'static,
+        T: Reflect,
     {
         self.try_get_of_type::<T>(handle.to_base()).is_ok()
     }
@@ -930,11 +914,11 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn find_map<C, T>(
         &self,
-        root_node: Handle<impl ObjectOrVariant<Self::Node>>,
+        root_node: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         cmp: &mut C,
-    ) -> Option<(Handle<Self::Node>, &T)>
+    ) -> Option<(Handle<Self::NodeWrapper>, &T)>
     where
-        C: FnMut(&Self::Node) -> Option<&T>,
+        C: FnMut(&Self::NodeWrapper) -> Option<&T>,
         T: ?Sized,
     {
         let root_node = root_node.to_base();
@@ -952,11 +936,11 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn find_up<C>(
         &self,
-        root_node: Handle<impl ObjectOrVariant<Self::Node>>,
+        root_node: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         cmp: &mut C,
-    ) -> Option<(Handle<Self::Node>, &Self::Node)>
+    ) -> Option<(Handle<Self::NodeWrapper>, &Self::NodeWrapper)>
     where
-        C: FnMut(&Self::Node) -> bool,
+        C: FnMut(&Self::NodeWrapper) -> bool,
     {
         let mut handle = root_node.to_base();
         while let Ok(node) = self.try_get_node(handle) {
@@ -973,11 +957,11 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn find_handle_up<C>(
         &self,
-        root_node: Handle<impl ObjectOrVariant<Self::Node>>,
+        root_node: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         cmp: &mut C,
-    ) -> Handle<Self::Node>
+    ) -> Handle<Self::NodeWrapper>
     where
-        C: FnMut(&Self::Node) -> bool,
+        C: FnMut(&Self::NodeWrapper) -> bool,
     {
         self.find_up(root_node, cmp)
             .map(|(h, _)| h)
@@ -985,31 +969,29 @@ pub trait SceneGraph: 'static {
     }
 
     #[inline]
-    fn find_component_up<T>(
+    fn find_self_or_field_up<T>(
         &self,
-        node_handle: Handle<impl ObjectOrVariant<Self::Node>>,
-    ) -> Option<(Handle<Self::Node>, &T)>
+        node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+    ) -> Option<(Handle<Self::NodeWrapper>, &T)>
     where
-        T: 'static,
+        T: Reflect,
     {
         self.find_up_map(node_handle, &mut |node| {
-            node.query_component_ref(TypeId::of::<T>())
+            node.inner_ref().self_or_field_ref::<T>()
         })
-        .and_then(|(handle, c)| c.downcast_ref::<T>().map(|typed| (handle, typed)))
     }
 
     #[inline]
-    fn find_component<T>(
+    fn find_self_or_field<T>(
         &self,
-        node_handle: Handle<impl ObjectOrVariant<Self::Node>>,
-    ) -> Option<(Handle<Self::Node>, &T)>
+        node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+    ) -> Option<(Handle<Self::NodeWrapper>, &T)>
     where
-        T: 'static,
+        T: Reflect,
     {
         self.find_map(node_handle, &mut |node| {
-            node.query_component_ref(TypeId::of::<T>())
+            node.inner_ref().self_or_field_ref::<T>()
         })
-        .and_then(|(handle, c)| c.downcast_ref::<T>().map(|typed| (handle, typed)))
     }
 
     /// Searches for a node up the tree starting from the specified node using the specified closure. Returns a tuple
@@ -1017,11 +999,11 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn find_up_map<C, T>(
         &self,
-        root_node: Handle<impl ObjectOrVariant<Self::Node>>,
+        root_node: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         cmp: &mut C,
-    ) -> Option<(Handle<Self::Node>, &T)>
+    ) -> Option<(Handle<Self::NodeWrapper>, &T)>
     where
-        C: FnMut(&Self::Node) -> Option<&T>,
+        C: FnMut(&Self::NodeWrapper) -> Option<&T>,
         T: ?Sized,
     {
         let mut handle = root_node.to_base();
@@ -1039,9 +1021,9 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn find_by_name(
         &self,
-        root_node: Handle<impl ObjectOrVariant<Self::Node>>,
+        root_node: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         name: &str,
-    ) -> Option<(Handle<Self::Node>, &Self::Node)> {
+    ) -> Option<(Handle<Self::NodeWrapper>, &Self::NodeWrapper)> {
         self.find(root_node, &mut |node| node.name() == name)
     }
 
@@ -1050,21 +1032,24 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn find_up_by_name(
         &self,
-        root_node: Handle<impl ObjectOrVariant<Self::Node>>,
+        root_node: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         name: &str,
-    ) -> Option<(Handle<Self::Node>, &Self::Node)> {
+    ) -> Option<(Handle<Self::NodeWrapper>, &Self::NodeWrapper)> {
         self.find_up(root_node, &mut |node| node.name() == name)
     }
 
     /// Searches for a node with the specified name down the tree starting from the graph root. Returns a tuple with a
     /// handle and a reference to the found node. If nothing is found, it returns [`None`].
     #[inline]
-    fn find_by_name_from_root(&self, name: &str) -> Option<(Handle<Self::Node>, &Self::Node)> {
+    fn find_by_name_from_root(
+        &self,
+        name: &str,
+    ) -> Option<(Handle<Self::NodeWrapper>, &Self::NodeWrapper)> {
         self.find_by_name(self.root(), name)
     }
 
     #[inline]
-    fn find_handle_by_name_from_root(&self, name: &str) -> Handle<Self::Node> {
+    fn find_handle_by_name_from_root(&self, name: &str) -> Handle<Self::NodeWrapper> {
         self.find_by_name(self.root(), name)
             .map(|(h, _)| h)
             .unwrap_or_default()
@@ -1073,9 +1058,12 @@ pub trait SceneGraph: 'static {
     /// Searches node using specified compare closure starting from root. Returns a tuple with a handle and
     /// a reference to the found node. If nothing is found, it returns [`None`].
     #[inline]
-    fn find_from_root<C>(&self, cmp: &mut C) -> Option<(Handle<Self::Node>, &Self::Node)>
+    fn find_from_root<C>(
+        &self,
+        cmp: &mut C,
+    ) -> Option<(Handle<Self::NodeWrapper>, &Self::NodeWrapper)>
     where
-        C: FnMut(&Self::Node) -> bool,
+        C: FnMut(&Self::NodeWrapper) -> bool,
     {
         self.find(self.root(), cmp)
     }
@@ -1086,11 +1074,11 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn find<C>(
         &self,
-        root_node: Handle<impl ObjectOrVariant<Self::Node>>,
+        root_node: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         cmp: &mut C,
-    ) -> Option<(Handle<Self::Node>, &Self::Node)>
+    ) -> Option<(Handle<Self::NodeWrapper>, &Self::NodeWrapper)>
     where
-        C: FnMut(&Self::Node) -> bool,
+        C: FnMut(&Self::NodeWrapper) -> bool,
     {
         let root_node = root_node.to_base();
         self.try_get_node(root_node).ok().and_then(|root| {
@@ -1107,11 +1095,11 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn find_handle<C>(
         &self,
-        root_node: Handle<impl ObjectOrVariant<Self::Node>>,
+        root_node: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         cmp: &mut C,
-    ) -> Handle<Self::Node>
+    ) -> Handle<Self::NodeWrapper>
     where
-        C: FnMut(&Self::Node) -> bool,
+        C: FnMut(&Self::NodeWrapper) -> bool,
     {
         self.find(root_node, cmp)
             .map(|(h, _)| h)
@@ -1133,9 +1121,9 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn relative_position(
         &self,
-        child: Handle<impl ObjectOrVariant<Self::Node>>,
+        child: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         offset: isize,
-    ) -> Option<(Handle<Self::Node>, usize)> {
+    ) -> Option<(Handle<Self::NodeWrapper>, usize)> {
         let child = child.to_base();
         let parents_parent_handle = self.try_get_node(child).ok()?.parent();
         let parents_parent_ref = self.try_get_node(parents_parent_handle).ok()?;
@@ -1150,8 +1138,8 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn traverse_iter(
         &self,
-        from: Handle<impl ObjectOrVariant<Self::Node>>,
-    ) -> impl Iterator<Item = (Handle<Self::Node>, &Self::Node)> {
+        from: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+    ) -> impl Iterator<Item = (Handle<Self::NodeWrapper>, &Self::NodeWrapper)> {
         GraphTraverseIteratorRef {
             graph: self,
             start_node_handle: from.to_base(),
@@ -1165,8 +1153,8 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn traverse_iter_mut(
         &mut self,
-        from: Handle<impl ObjectOrVariant<Self::Node>>,
-    ) -> impl Iterator<Item = (Handle<Self::Node>, &mut Self::Node)> {
+        from: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+    ) -> impl Iterator<Item = (Handle<Self::NodeWrapper>, &mut Self::NodeWrapper)> {
         GraphTraverseIteratorMut {
             graph: self,
             start_node_handle: from.to_base(),
@@ -1179,8 +1167,8 @@ pub trait SceneGraph: 'static {
     #[inline]
     fn traverse_handle_iter(
         &self,
-        from: Handle<impl ObjectOrVariant<Self::Node>>,
-    ) -> impl Iterator<Item = Handle<Self::Node>> {
+        from: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+    ) -> impl Iterator<Item = Handle<Self::NodeWrapper>> {
         self.traverse_iter(from).map(|(handle, _)| handle)
     }
 
@@ -1190,14 +1178,14 @@ pub trait SceneGraph: 'static {
     fn restore_integrity<F>(
         &mut self,
         mut instantiate: F,
-    ) -> Vec<(Handle<Self::Node>, Resource<Self::Prefab>)>
+    ) -> Vec<(Handle<Self::NodeWrapper>, Resource<Self::Prefab>)>
     where
         F: FnMut(
             Resource<Self::Prefab>,
             &Self::Prefab,
-            Handle<Self::Node>,
+            Handle<Self::NodeWrapper>,
             &mut Self,
-        ) -> (Handle<Self::Node>, NodeHandleMap<Self::Node>),
+        ) -> (Handle<Self::NodeWrapper>, NodeHandleMap<Self::NodeWrapper>),
     {
         Log::writeln(MessageKind::Information, "Checking integrity...");
 
@@ -1287,8 +1275,9 @@ pub trait SceneGraph: 'static {
 
                     // Root of the resource is not belongs to resource, it is just a convenient way of
                     // consolidation all descendants under a single node.
-                    let mut compare =
-                        |n: &Self::Node| n.original_handle_in_resource() == resource_node_handle;
+                    let mut compare = |n: &Self::NodeWrapper| {
+                        n.original_handle_in_resource() == resource_node_handle
+                    };
 
                     if resource_node_handle != resource_graph.root()
                         && self.find(instance_root, &mut compare).is_none()
@@ -1348,7 +1337,7 @@ pub trait SceneGraph: 'static {
         ignored_types: &[TypeId],
         mut before_inherit: F,
     ) where
-        F: FnMut(&Self::Node, &mut Self::Node),
+        F: FnMut(&Self::NodeWrapper, &mut Self::NodeWrapper),
     {
         let mut ignored_types = ignored_types.to_vec();
         // Do not try to inspect resources, because it most likely cause a deadlock.
@@ -1398,26 +1387,17 @@ pub trait SceneGraph: 'static {
 
                         // Check if the actual node types (this and parent's) are equal, and if not - copy the
                         // node and replace its base.
-                        let mut types_match = true;
-                        node.as_reflect(&mut |node_reflect| {
-                            resource_node.as_reflect(&mut |resource_node_reflect| {
-                                types_match =
-                                    node_reflect.type_id() == resource_node_reflect.type_id();
-
-                                if !types_match {
-                                    Log::warn(format!(
-                                        "Node {}({}:{}) instance \
+                        if node.inner_ref().type_id() != resource_node.inner_ref().type_id() {
+                            Log::warn(format!(
+                                "Node {}({}:{}) instance \
                                         have different type than in the respective parent \
                                         asset {}. The type will be fixed.",
-                                        node.name(),
-                                        node.self_handle().index(),
-                                        node.self_handle().generation(),
-                                        model_kind
-                                    ));
-                                }
-                            })
-                        });
-                        if !types_match {
+                                node.name(),
+                                node.self_handle().index(),
+                                node.self_handle().generation(),
+                                model_kind
+                            ));
+
                             let base = node.base().clone();
                             let mut resource_node_clone = resource_node.clone();
                             variable::mark_inheritable_properties_non_modified(
@@ -1429,15 +1409,11 @@ pub trait SceneGraph: 'static {
                         }
 
                         // Then try to inherit properties.
-                        node.as_reflect_mut(&mut |node_reflect| {
-                            resource_node.as_reflect(&mut |resource_node_reflect| {
-                                Log::verify(variable::try_inherit_properties(
-                                    node_reflect,
-                                    resource_node_reflect,
-                                    &ignored_types,
-                                ));
-                            })
-                        })
+                        Log::verify(variable::try_inherit_properties(
+                            node,
+                            resource_node,
+                            &ignored_types,
+                        ));
                     } else {
                         Log::warn(format!(
                             "Unable to find original handle for node {}. The node will be removed!",
@@ -1457,7 +1433,7 @@ pub trait SceneGraph: 'static {
     ///
     /// To do so, we at first, build node handle mapping (original handle -> instance handle) starting from
     /// instance root. Then we must find all inheritable properties and try to remap them to instance handles.
-    fn remap_handles(&mut self, instances: &[(Handle<Self::Node>, Resource<Self::Prefab>)]) {
+    fn remap_handles(&mut self, instances: &[(Handle<Self::NodeWrapper>, Resource<Self::Prefab>)]) {
         for (instance_root, resource) in instances {
             // Prepare old -> new handle mapping first by walking over the graph
             // starting from instance root.
@@ -1509,8 +1485,8 @@ pub struct GraphTraverseIteratorRef<'a, G: ?Sized, N> {
 
 impl<'a, G: ?Sized, N> Iterator for GraphTraverseIteratorRef<'a, G, N>
 where
-    G: SceneGraph<Node = N>,
-    N: SceneGraphNode,
+    G: SceneGraph<NodeWrapper = N>,
+    N: NodeWrapper,
 {
     type Item = (Handle<N>, &'a N);
 
@@ -1567,8 +1543,8 @@ pub struct GraphTraverseIteratorMut<'a, G: ?Sized, N> {
 
 impl<'a, G: ?Sized, N> Iterator for GraphTraverseIteratorMut<'a, G, N>
 where
-    G: SceneGraph<Node = N>,
-    N: SceneGraphNode,
+    G: SceneGraph<NodeWrapper = N>,
+    N: NodeWrapper,
 {
     type Item = (Handle<N>, &'a mut N);
 
@@ -1633,13 +1609,13 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{NodeHandleMap, NodeMapping, PrefabData, SceneGraph, SceneGraphNode};
+    use crate::{NodeHandleMap, NodeMapping, NodeWrapper, PrefabData, SceneGraph};
     use fyrox_core::pool::{ObjectOrVariant, ObjectOrVariantHelper, PoolError};
+    use fyrox_core::uuid::Uuid;
     use fyrox_core::{
         define_as_any_trait,
         pool::{Handle, PayloadContainer, Pool},
         reflect::prelude::*,
-        type_traits::prelude::*,
         visitor::prelude::*,
         NameProvider,
     };
@@ -1653,7 +1629,8 @@ mod test {
         path::Path,
     };
 
-    #[derive(Visit, Reflect, Debug, Clone)]
+    #[derive(Visit, Reflect, PartialEq, Debug, Clone)]
+    #[reflect(type_uuid = "34f5e3ea-3008-45e9-9e6e-0b8fbff1ac28")]
     pub struct Base {
         name: String,
         self_handle: Handle<Node>,
@@ -1699,7 +1676,7 @@ mod test {
 
     define_as_any_trait!(NodeAsAny => NodeTrait);
 
-    pub trait NodeTrait: BaseNodeTrait + Reflect + Visit + ComponentProvider + NodeAsAny {}
+    pub trait NodeTrait: BaseNodeTrait + Reflect + Visit + NodeAsAny {}
 
     // Essentially implements ObjectOrVariant for NodeTrait types.
     // See ObjectOrVariantHelper for the cause of the indirection.
@@ -1712,12 +1689,19 @@ mod test {
         }
     }
 
-    #[derive(ComponentProvider, Debug)]
-    pub struct Node(Box<dyn NodeTrait>);
+    #[derive(Debug, Reflect)]
+    #[reflect(type_uuid = "e2c18cd6-f1bf-40e5-9ec6-0dc48cc75409")]
+    pub struct Node(#[reflect(deref, display_name = "Node")] Box<dyn NodeTrait>);
 
     impl Clone for Node {
         fn clone(&self) -> Self {
             self.0.clone_box()
+        }
+    }
+
+    impl PartialEq for Node {
+        fn eq(&self, other: &Self) -> bool {
+            self.0.try_compare(other.0.deref()).unwrap_or_default()
         }
     }
 
@@ -1730,89 +1714,6 @@ mod test {
     impl Visit for Node {
         fn visit(&mut self, name: &str, visitor: &mut Visitor) -> VisitResult {
             self.0.visit(name, visitor)
-        }
-    }
-
-    impl Reflect for Node {
-        fn source_path() -> &'static str {
-            file!()
-        }
-
-        fn type_name(&self) -> &'static str {
-            self.0.deref().type_name()
-        }
-
-        fn doc(&self) -> &'static str {
-            self.0.deref().doc()
-        }
-
-        fn assembly_name(&self) -> &'static str {
-            self.0.deref().assembly_name()
-        }
-
-        fn type_assembly_name() -> &'static str {
-            env!("CARGO_PKG_NAME")
-        }
-
-        fn fields_ref(&self, func: &mut dyn FnMut(&[FieldRef])) {
-            self.0.deref().fields_ref(func)
-        }
-
-        fn fields_mut(&mut self, func: &mut dyn FnMut(&mut [FieldMut])) {
-            self.0.deref_mut().fields_mut(func)
-        }
-
-        fn into_any(self: Box<Self>) -> Box<dyn Any> {
-            Reflect::into_any(self.0)
-        }
-
-        fn as_any(&self, func: &mut dyn FnMut(&dyn Any)) {
-            Reflect::as_any(self.0.deref(), func)
-        }
-
-        fn as_any_mut(&mut self, func: &mut dyn FnMut(&mut dyn Any)) {
-            Reflect::as_any_mut(self.0.deref_mut(), func)
-        }
-
-        fn as_reflect(&self, func: &mut dyn FnMut(&dyn Reflect)) {
-            self.0.deref().as_reflect(func)
-        }
-
-        fn as_reflect_mut(&mut self, func: &mut dyn FnMut(&mut dyn Reflect)) {
-            self.0.deref_mut().as_reflect_mut(func)
-        }
-
-        fn set(&mut self, value: Box<dyn Reflect>) -> Result<Box<dyn Reflect>, Box<dyn Reflect>> {
-            self.0.deref_mut().set(value)
-        }
-
-        fn set_field(
-            &mut self,
-            field: &str,
-            value: Box<dyn Reflect>,
-            func: &mut dyn FnMut(Result<Box<dyn Reflect>, SetFieldError>),
-        ) {
-            self.0.deref_mut().set_field(field, value, func)
-        }
-
-        fn field(&self, name: &str, func: &mut dyn FnMut(Option<&dyn Reflect>)) {
-            self.0.deref().field(name, func)
-        }
-
-        fn field_mut(&mut self, name: &str, func: &mut dyn FnMut(Option<&mut dyn Reflect>)) {
-            self.0.deref_mut().field_mut(name, func)
-        }
-
-        fn derived_types() -> &'static [TypeId] {
-            &[]
-        }
-
-        fn query_derived_types(&self) -> &'static [TypeId] {
-            Self::derived_types()
-        }
-
-        fn try_clone_box(&self) -> Option<Box<dyn Reflect>> {
-            Some(Box::new(self.clone()))
         }
     }
 
@@ -1838,7 +1739,8 @@ mod test {
 
     /// A wrapper for node pool record that allows to define custom visit method to have full
     /// control over instantiation process at deserialization.
-    #[derive(Debug, Default, Clone, Reflect)]
+    #[derive(Debug, Default, Clone, PartialEq, Reflect)]
+    #[reflect(type_uuid = "08052dac-c0c0-4df3-8005-1330827bf9c2")]
     pub struct NodeContainer(Option<Node>);
 
     impl Visit for NodeContainer {
@@ -1880,10 +1782,18 @@ mod test {
         }
     }
 
-    impl SceneGraphNode for Node {
+    impl NodeWrapper for Node {
         type Base = Base;
         type SceneGraph = Graph;
         type ResourceData = Graph;
+
+        fn inner_ref(&self) -> &dyn Reflect {
+            self.0.deref()
+        }
+
+        fn inner_mut(&mut self) -> &mut dyn Reflect {
+            self.0.deref_mut()
+        }
 
         #[allow(clippy::explicit_auto_deref)] // False-positive
         fn base(&self) -> &Self::Base {
@@ -1931,18 +1841,14 @@ mod test {
         }
     }
 
-    #[derive(Default, Clone, TypeUuidProvider, Visit, Reflect, Debug)]
-    #[type_uuid(id = "fc887063-7780-44af-8710-5e0bcf9a83fd")]
+    #[derive(Default, Clone, Visit, Reflect, PartialEq, Debug)]
+    #[reflect(type_uuid = "fc887063-7780-44af-8710-5e0bcf9a83fd")]
     pub struct Graph {
         root: Handle<Node>,
         nodes: Pool<Node, NodeContainer>,
     }
 
     impl ResourceData for Graph {
-        fn type_uuid(&self) -> Uuid {
-            <Graph as TypeUuidProvider>::type_uuid()
-        }
-
         fn save(&mut self, _path: &Path) -> Result<(), Box<dyn Error>> {
             Ok(())
         }
@@ -1986,32 +1892,35 @@ mod test {
 
     impl SceneGraph for Graph {
         type Prefab = Graph;
-        type NodeContainer = NodeContainer;
-        type Node = Node;
+        type NodeWrapper = Node;
 
         fn summary(&self) -> String {
             "Summary".to_string()
         }
 
-        fn root(&self) -> Handle<Self::Node> {
+        fn root(&self) -> Handle<Self::NodeWrapper> {
             self.root
         }
 
-        fn set_root(&mut self, root: Handle<Self::Node>) {
+        fn set_root(&mut self, root: Handle<Self::NodeWrapper>) {
             self.root = root;
         }
 
-        fn is_valid_handle(&self, handle: Handle<impl ObjectOrVariant<Self::Node>>) -> bool {
+        fn is_valid_handle(&self, handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) -> bool {
             self.nodes.is_valid_handle(handle)
         }
 
-        fn add_node(&mut self, node: Self::Node) -> Handle<Self::Node> {
+        fn add_node(&mut self, node: Self::NodeWrapper) -> Handle<Self::NodeWrapper> {
             let handle = self.nodes.next_free_handle();
             self.add_node_at_handle(node, handle);
             handle
         }
 
-        fn add_node_at_handle(&mut self, mut node: Self::Node, handle: Handle<Self::Node>) {
+        fn add_node_at_handle(
+            &mut self,
+            mut node: Self::NodeWrapper,
+            handle: Handle<Self::NodeWrapper>,
+        ) {
             let children = node.children.clone();
             node.children.clear();
             let handle = self
@@ -2033,7 +1942,7 @@ mod test {
             node.self_handle = handle;
         }
 
-        fn remove_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::Node>>) {
+        fn remove_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) {
             let node_handle = node_handle.to_base();
             self.isolate_node(node_handle);
             let mut stack = vec![node_handle];
@@ -2045,8 +1954,8 @@ mod test {
 
         fn link_nodes(
             &mut self,
-            child: Handle<impl ObjectOrVariant<Self::Node>>,
-            parent: Handle<impl ObjectOrVariant<Self::Node>>,
+            child: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
+            parent: Handle<impl ObjectOrVariant<Self::NodeWrapper>>,
         ) {
             let child = child.to_base();
             let parent = parent.to_base();
@@ -2055,12 +1964,12 @@ mod test {
             self.nodes[parent].children.push(child);
         }
 
-        fn unlink_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::Node>>) {
+        fn unlink_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) {
             self.isolate_node(node_handle);
             self.link_nodes(node_handle, self.root);
         }
 
-        fn isolate_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::Node>>) {
+        fn isolate_node(&mut self, node_handle: Handle<impl ObjectOrVariant<Self::NodeWrapper>>) {
             let node_handle = node_handle.to_base();
 
             let parent_handle =
@@ -2073,44 +1982,55 @@ mod test {
             }
         }
 
-        fn try_get_node(&self, handle: Handle<Self::Node>) -> Result<&Self::Node, PoolError> {
+        fn try_get_node(
+            &self,
+            handle: Handle<Self::NodeWrapper>,
+        ) -> Result<&Self::NodeWrapper, PoolError> {
             self.nodes.try_borrow(handle)
         }
 
         fn try_get_node_mut(
             &mut self,
-            handle: Handle<Self::Node>,
-        ) -> Result<&mut Self::Node, PoolError> {
+            handle: Handle<Self::NodeWrapper>,
+        ) -> Result<&mut Self::NodeWrapper, PoolError> {
             self.nodes.try_borrow_mut(handle)
         }
 
-        fn actual_type_id(&self, handle: Handle<Self::Node>) -> Result<TypeId, PoolError> {
+        fn actual_type_id(&self, handle: Handle<Self::NodeWrapper>) -> Result<TypeId, PoolError> {
             self.nodes
                 .try_borrow(handle)
                 .map(|n| NodeAsAny::as_any(n.0.deref()).type_id())
         }
 
-        fn derived_type_ids(&self, handle: Handle<Self::Node>) -> Result<Vec<TypeId>, PoolError> {
+        fn derived_type_ids(
+            &self,
+            handle: Handle<Self::NodeWrapper>,
+        ) -> Result<Vec<TypeId>, PoolError> {
             self.nodes
                 .try_borrow(handle)
-                .map(|n| n.0.deref().query_derived_types().to_vec())
+                .map(|n| n.0.deref().type_info_ref().derived_types.to_vec())
         }
 
-        fn actual_type_name(&self, handle: Handle<Self::Node>) -> Result<&'static str, PoolError> {
+        fn actual_type_name(
+            &self,
+            handle: Handle<Self::NodeWrapper>,
+        ) -> Result<&'static str, PoolError> {
             self.nodes
                 .try_borrow(handle)
-                .map(|n| n.0.deref().type_name())
+                .map(|n| n.0.deref().type_info_ref().type_name)
         }
 
-        fn pair_iter(&self) -> impl Iterator<Item = (Handle<Self::Node>, &Self::Node)> {
+        fn pair_iter(
+            &self,
+        ) -> impl Iterator<Item = (Handle<Self::NodeWrapper>, &Self::NodeWrapper)> {
             self.nodes.pair_iter()
         }
 
-        fn linear_iter(&self) -> impl Iterator<Item = &Self::Node> {
+        fn linear_iter(&self) -> impl Iterator<Item = &Self::NodeWrapper> {
             self.nodes.iter()
         }
 
-        fn linear_iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Node> {
+        fn linear_iter_mut(&mut self) -> impl Iterator<Item = &mut Self::NodeWrapper> {
             self.nodes.iter_mut()
         }
 
@@ -2177,8 +2097,9 @@ mod test {
         }
     }
 
-    #[derive(Clone, Reflect, Visit, Default, Debug, ComponentProvider)]
+    #[derive(Clone, Reflect, Visit, PartialEq, Default, Debug)]
     #[reflect(derived_type = "Node")]
+    #[reflect(type_uuid = "c7452fb6-78c1-4e77-a2f9-d9ae31f50327")]
     pub struct Pivot {
         base: Base,
     }
@@ -2199,8 +2120,9 @@ mod test {
         }
     }
 
-    #[derive(Clone, Reflect, Visit, Default, Debug, ComponentProvider)]
+    #[derive(Clone, Reflect, Visit, PartialEq, Default, Debug)]
     #[reflect(derived_type = "Node")]
+    #[reflect(type_uuid = "17cc2d25-6ba4-4e2d-a31e-867e429bc659")]
     pub struct RigidBody {
         base: Base,
     }
@@ -2221,8 +2143,9 @@ mod test {
         }
     }
 
-    #[derive(Clone, Reflect, Visit, Default, Debug, ComponentProvider)]
+    #[derive(Clone, Reflect, Visit, PartialEq, Default, Debug)]
     #[reflect(derived_type = "Node")]
+    #[reflect(type_uuid = "1f869298-37b1-4153-a2a9-6576daa0e8b3")]
     pub struct Joint {
         base: Base,
         connected_body1: Handle<RigidBody>,
@@ -2258,6 +2181,8 @@ mod test {
         graph.link_nodes(b, root);
         graph.link_nodes(c, root);
         graph.link_nodes(d, root);
+
+        assert!(graph.try_get_of_type::<Pivot>(a).is_ok());
 
         let root_ref = &mut graph[root];
         assert_eq!(root_ref.set_child_position(a, 0), Some(0));
@@ -2326,11 +2251,12 @@ mod test {
             .unwrap()
             .transmute::<RigidBody>();
         let joint_copy = mapping.inner().get(&joint).cloned().unwrap();
-        Reflect::as_any(&scene_graph.nodes[joint_copy], &mut |any| {
-            let joint_copy_ref = any.downcast_ref::<Joint>().unwrap();
-            assert_eq!(joint_copy_ref.connected_body1, rigid_body_copy);
-            assert_eq!(joint_copy_ref.connected_body2, rigid_body2_copy);
-        });
+        let joint_copy_ref = scene_graph.nodes[joint_copy]
+            .inner_ref()
+            .downcast_ref::<Joint>()
+            .unwrap();
+        assert_eq!(joint_copy_ref.connected_body1, rigid_body_copy);
+        assert_eq!(joint_copy_ref.connected_body2, rigid_body2_copy);
     }
 
     #[test]

@@ -19,13 +19,10 @@
 // SOFTWARE.
 
 use crate::pool::ObjectOrVariant;
-use crate::reflect::ReflectHandle;
-use crate::{
-    combine_uuids, pool::INVALID_GENERATION, reflect::prelude::*, uuid_provider,
-    visitor::prelude::*, TypeUuidProvider,
-};
+use crate::reflect::{ReflectHandle, TypeInfo};
+use crate::{pool::INVALID_GENERATION, reflect::prelude::*, visitor::prelude::*};
 use serde::{Deserialize, Serialize};
-use std::any::{type_name, Any, TypeId};
+use std::any::{type_name, TypeId};
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter},
@@ -33,7 +30,6 @@ use std::{
     marker::PhantomData,
     sync::atomic::{self, AtomicUsize},
 };
-use uuid::Uuid;
 
 /// Handle is some sort of non-owning reference to content in a pool. It stores
 /// index of object and additional information that allows to ensure that handle
@@ -111,39 +107,26 @@ static GENERATION_METADATA: FieldMetadata = FieldMetadata {
 };
 
 impl<T: Reflect> Reflect for Handle<T> {
-    fn source_path() -> &'static str {
-        file!()
+    fn type_info() -> TypeInfo {
+        TypeInfo {
+            source_path: file!(),
+            type_name: type_name::<Self>(),
+            assembly_name: env!("CARGO_PKG_NAME"),
+            doc_comment: "",
+            derived_types: T::type_info().derived_types,
+            type_uuid: combine_uuids(
+                uuid::uuid!("30c0668d-7a2c-47e6-8c7b-208fdcc905a1"),
+                T::type_info().type_uuid,
+            ),
+        }
     }
 
-    fn derived_types() -> &'static [TypeId]
-    where
-        Self: Sized,
-    {
-        T::derived_types()
+    fn type_info_ref(&self) -> TypeInfo {
+        Self::type_info()
     }
 
     fn try_clone_box(&self) -> Option<Box<dyn Reflect>> {
         Some(Box::new(*self))
-    }
-
-    fn query_derived_types(&self) -> &'static [TypeId] {
-        Self::derived_types()
-    }
-
-    fn type_name(&self) -> &'static str {
-        type_name::<Self>()
-    }
-
-    fn doc(&self) -> &'static str {
-        ""
-    }
-
-    fn assembly_name(&self) -> &'static str {
-        env!("CARGO_PKG_NAME")
-    }
-
-    fn type_assembly_name() -> &'static str {
-        env!("CARGO_PKG_NAME")
     }
 
     fn fields_ref(&self, func: &mut dyn FnMut(&[FieldRef])) {
@@ -180,37 +163,55 @@ impl<T: Reflect> Reflect for Handle<T> {
         ])
     }
 
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-
-    fn as_any(&self, func: &mut dyn FnMut(&dyn Any)) {
-        func(self)
-    }
-
-    fn as_any_mut(&mut self, func: &mut dyn FnMut(&mut dyn Any)) {
-        func(self)
-    }
-
-    fn as_reflect(&self, func: &mut dyn FnMut(&dyn Reflect)) {
-        func(self)
-    }
-
-    fn as_reflect_mut(&mut self, func: &mut dyn FnMut(&mut dyn Reflect)) {
-        func(self)
-    }
-
     fn set(&mut self, value: Box<dyn Reflect>) -> Result<Box<dyn Reflect>, Box<dyn Reflect>> {
         let this = std::mem::replace(self, value.take()?);
         Ok(Box::new(this))
     }
 
-    fn as_handle(&self, func: &mut dyn FnMut(Option<&dyn ReflectHandle>)) {
-        func(Some(self))
+    fn as_handle(&self) -> Option<&dyn ReflectHandle> {
+        Some(self)
     }
 
-    fn as_handle_mut(&mut self, func: &mut dyn FnMut(Option<&mut dyn ReflectHandle>)) {
-        func(Some(self))
+    fn as_handle_mut(&mut self) -> Option<&mut dyn ReflectHandle> {
+        Some(self)
+    }
+
+    fn field_direct_ref(&self, index: usize) -> Option<FieldRef> {
+        if index == 0 {
+            Some(FieldRef {
+                metadata: &INDEX_METADATA,
+                value: &self.index,
+            })
+        } else if index == 1 {
+            Some(FieldRef {
+                metadata: &GENERATION_METADATA,
+                value: &self.generation,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn field_direct_mut(&mut self, index: usize) -> Option<FieldMut> {
+        if index == 0 {
+            Some(FieldMut {
+                metadata: &INDEX_METADATA,
+                value: &mut self.index,
+            })
+        } else if index == 1 {
+            Some(FieldMut {
+                metadata: &GENERATION_METADATA,
+                value: &mut self.generation,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn try_compare(&self, other: &dyn Reflect) -> Option<bool> {
+        (other as &dyn std::any::Any)
+            .downcast_ref::<Self>()
+            .map(|other| other == self)
     }
 }
 
@@ -312,19 +313,6 @@ impl<T> Handle<T> {
     #[inline(always)]
     pub fn encode_to_u128(&self) -> u128 {
         (self.index as u128) | ((self.generation as u128) << 32)
-    }
-}
-
-impl<T> TypeUuidProvider for Handle<T>
-where
-    T: TypeUuidProvider,
-{
-    #[inline]
-    fn type_uuid() -> Uuid {
-        combine_uuids(
-            uuid::uuid!("30c0668d-7a2c-47e6-8c7b-208fdcc905a1"),
-            T::type_uuid(),
-        )
     }
 }
 
@@ -435,6 +423,7 @@ impl Debug for AtomicHandle {
 #[derive(
     Copy, Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash, Reflect, Visit, Serialize, Deserialize,
 )]
+#[reflect(type_uuid = "50131acc-8b3b-40b5-b495-e2c552c94db3")]
 pub struct ErasedHandle {
     /// Index of object in pool.
     #[reflect(read_only)]
@@ -444,8 +433,6 @@ pub struct ErasedHandle {
     #[reflect(read_only)]
     generation: u32,
 }
-
-uuid_provider!(ErasedHandle = "50131acc-8b3b-40b5-b495-e2c552c94db3");
 
 impl Display for ErasedHandle {
     #[inline]

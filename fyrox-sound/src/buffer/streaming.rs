@@ -62,6 +62,7 @@ use std::{
 /// Streaming buffer for long sounds. Does not support random access.
 #[derive(Debug, Default, Visit, Reflect)]
 #[reflect(non_cloneable)]
+#[reflect(type_uuid = "2e668c89-5998-4e66-a908-f5d96d700c9e")]
 pub struct StreamingBuffer {
     pub(crate) generic: GenericBuffer,
     /// Count of sources that share this buffer, it is important to keep only one
@@ -72,6 +73,12 @@ pub struct StreamingBuffer {
     #[visit(skip)]
     #[reflect(hidden)]
     streaming_source: StreamingSource,
+}
+
+impl PartialEq for StreamingBuffer {
+    fn eq(&self, other: &Self) -> bool {
+        self.generic == other.generic
+    }
 }
 
 #[derive(Debug, Default)]

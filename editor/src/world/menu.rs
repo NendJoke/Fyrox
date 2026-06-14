@@ -59,7 +59,7 @@ use crate::{
     world::WorldViewerItemContextMenu,
     Engine, Message, PasteCommand,
 };
-use fyrox::core::{uuid, Uuid};
+use fyrox::core::uuid::{uuid, Uuid};
 use fyrox::gui::file_browser::{FileSelector, FileType};
 use fyrox::gui::menu::MenuItem;
 use fyrox::gui::window::WindowAlignment;
@@ -461,16 +461,14 @@ impl SceneNodeContextMenu {
                             if let Ok(node) = scene.graph.try_get_node(*node_handle) {
                                 (node as &dyn Reflect).enumerate_fields_recursively(
                                     &mut |path, _, val| {
-                                        val.as_inheritable_variable(&mut |inheritable| {
-                                            if inheritable.is_some() {
-                                                commands.push(Command::new(
-                                                    RevertSceneNodePropertyCommand::new(
-                                                        path.to_string(),
-                                                        *node_handle,
-                                                    ),
-                                                ));
-                                            }
-                                        });
+                                        if val.as_inheritable_variable().is_some() {
+                                            commands.push(Command::new(
+                                                RevertSceneNodePropertyCommand::new(
+                                                    path.to_string(),
+                                                    *node_handle,
+                                                ),
+                                            ));
+                                        }
                                     },
                                     &[TypeId::of::<UntypedResource>()],
                                 )

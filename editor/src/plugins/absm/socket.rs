@@ -20,10 +20,7 @@
 
 use crate::fyrox::core::pool::ErasedHandle;
 use crate::fyrox::{
-    core::{
-        algebra::Vector2, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        uuid_provider, visitor::prelude::*,
-    },
+    core::{algebra::Vector2, pool::Handle, reflect::prelude::*, visitor::prelude::*},
     gui::{
         define_widget_deref,
         grid::{Column, GridBuilder, Row},
@@ -49,14 +46,18 @@ pub enum SocketMessage {
 impl MessageData for SocketMessage {}
 
 #[derive(Copy, Clone, PartialEq, Hash, Debug, Eq, Visit, Reflect, Default)]
+#[reflect(type_uuid = "c77c74cf-d055-4ab3-8d20-67749e276169")]
 pub enum SocketDirection {
     #[default]
     Input,
     Output,
 }
 
-#[derive(Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "a6c0473e-7073-4e91-a681-cf88795af52a"
+)]
 pub struct Socket {
     widget: Widget,
     click_position: Option<Vector2<f32>>,
@@ -71,8 +72,6 @@ pub struct Socket {
 define_widget_deref!(Socket);
 
 const RADIUS: f32 = 8.0;
-
-uuid_provider!(Socket = "a6c0473e-7073-4e91-a681-cf88795af52a");
 
 impl Control for Socket {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {

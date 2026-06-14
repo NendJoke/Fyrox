@@ -40,11 +40,11 @@
 //! indirections that might cause cache invalidation. This is the so called cache
 //! friendliness.
 
-use crate::{reflect::prelude::*, visitor::prelude::*, ComponentProvider};
+use crate::{reflect::prelude::*, visitor::prelude::*};
+use std::any::type_name;
 use std::cell::UnsafeCell;
 use std::fmt::{Display, Formatter};
 use std::{
-    any::{Any, TypeId},
     fmt::Debug,
     future::Future,
     marker::PhantomData,
@@ -55,6 +55,7 @@ pub mod handle;
 pub mod multiborrow;
 pub mod payload;
 
+use crate::reflect::TypeInfo;
 pub use handle::*;
 pub use multiborrow::*;
 pub use payload::*;
@@ -143,38 +144,36 @@ where
 
 impl<T, P> Reflect for Pool<T, P>
 where
-    T: Reflect,
-    P: PayloadContainer<Element = T> + Reflect,
+    T: Reflect + PartialEq,
+    P: PayloadContainer<Element = T> + Reflect + PartialEq,
     Pool<T, P>: Clone,
 {
-    #[inline]
-    fn source_path() -> &'static str {
-        file!()
+    fn type_info() -> TypeInfo {
+        TypeInfo {
+            source_path: file!(),
+            type_name: type_name::<Self>(),
+            assembly_name: env!("CARGO_PKG_NAME"),
+            doc_comment: "",
+            derived_types: &[],
+            type_uuid: combine_uuids(
+                uuid!("1f615965-820a-4948-970d-8e99cd588006"),
+                combine_uuids(T::type_info().type_uuid, P::type_info().type_uuid),
+            ),
+        }
     }
 
-    fn derived_types() -> &'static [TypeId]
-    where
-        Self: Sized,
-    {
-        &[]
+    fn type_info_ref(&self) -> TypeInfo {
+        Self::type_info()
     }
 
     fn try_clone_box(&self) -> Option<Box<dyn Reflect>> {
         Some(Box::new(self.clone()))
     }
 
-    fn query_derived_types(&self) -> &'static [TypeId] {
-        Self::derived_types()
-    }
-
-    #[inline]
-    fn type_name(&self) -> &'static str {
-        std::any::type_name::<Self>()
-    }
-
-    #[inline]
-    fn doc(&self) -> &'static str {
-        ""
+    fn try_compare(&self, other: &dyn Reflect) -> Option<bool> {
+        (other as &dyn std::any::Any)
+            .downcast_ref::<Self>()
+            .map(|other| other == self)
     }
 
     #[inline]
@@ -188,59 +187,34 @@ where
     }
 
     #[inline]
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-
-    #[inline]
-    fn as_any(&self, func: &mut dyn FnMut(&dyn Any)) {
-        func(self)
-    }
-
-    #[inline]
-    fn as_any_mut(&mut self, func: &mut dyn FnMut(&mut dyn Any)) {
-        func(self)
-    }
-
-    #[inline]
-    fn as_reflect(&self, func: &mut dyn FnMut(&dyn Reflect)) {
-        func(self)
-    }
-
-    #[inline]
-    fn as_reflect_mut(&mut self, func: &mut dyn FnMut(&mut dyn Reflect)) {
-        func(self)
-    }
-
-    #[inline]
     fn set(&mut self, value: Box<dyn Reflect>) -> Result<Box<dyn Reflect>, Box<dyn Reflect>> {
         let this = std::mem::replace(self, value.take()?);
         Ok(Box::new(this))
     }
 
-    fn assembly_name(&self) -> &'static str {
-        env!("CARGO_PKG_NAME")
+    fn field_direct_ref(&self, _index: usize) -> Option<FieldRef> {
+        None
     }
 
-    fn type_assembly_name() -> &'static str {
-        env!("CARGO_PKG_NAME")
-    }
-
-    #[inline]
-    fn as_array(&self, func: &mut dyn FnMut(Option<&dyn ReflectArray>)) {
-        func(Some(self))
+    fn field_direct_mut(&mut self, _index: usize) -> Option<FieldMut> {
+        None
     }
 
     #[inline]
-    fn as_array_mut(&mut self, func: &mut dyn FnMut(Option<&mut dyn ReflectArray>)) {
-        func(Some(self))
+    fn as_array(&self) -> Option<&dyn ReflectArray> {
+        Some(self)
+    }
+
+    #[inline]
+    fn as_array_mut(&mut self) -> Option<&mut dyn ReflectArray> {
+        Some(self)
     }
 }
 
 impl<T, P> ReflectArray for Pool<T, P>
 where
-    T: Reflect,
-    P: PayloadContainer<Element = T> + Reflect,
+    T: Reflect + PartialEq,
+    P: PayloadContainer<Element = T> + Reflect + PartialEq,
     Pool<T, P>: Clone,
 {
     #[inline]
@@ -433,7 +407,7 @@ pub enum PoolError {
     InvalidGeneration(u32),
     InvalidType(ErasedHandle),
     Empty(ErasedHandle),
-    NoSuchComponent(ErasedHandle),
+    NoSuchField(ErasedHandle),
     MutablyBorrowed(ErasedHandle),
     ImmutablyBorrowed(ErasedHandle),
     UnknownDependentObject(ErasedHandle),
@@ -473,7 +447,7 @@ impl Display for PoolError {
                 is invalid!"
                 )
             }
-            Self::NoSuchComponent(handle) => write!(
+            Self::NoSuchField(handle) => write!(
                 f,
                 "An object at {handle} handle does not have such component.",
             ),
@@ -1406,44 +1380,33 @@ where
 
 impl<T, P> Pool<T, P>
 where
-    T: ComponentProvider,
+    T: Reflect,
     P: PayloadContainer<Element = T> + 'static,
 {
     /// Tries to mutably borrow an object and fetch its component of specified type.
     #[inline]
-    pub fn try_get_component_of_type<C>(&self, handle: Handle<T>) -> Result<&C, PoolError>
+    pub fn try_get_or_field_ref<C>(&self, handle: Handle<T>) -> Result<&C, PoolError>
     where
-        C: 'static,
+        C: Reflect,
     {
-        self.try_borrow(handle)
-            .and_then(|n| {
-                n.query_component_ref(TypeId::of::<C>())
-                    .ok_or(PoolError::NoSuchComponent(handle.into()))
-            })
-            .and_then(|c| {
-                c.downcast_ref()
-                    .ok_or(PoolError::InvalidType(handle.into()))
-            })
+        self.try_borrow(handle).and_then(|n| {
+            (n as &dyn Reflect)
+                .self_or_field_ref::<C>()
+                .ok_or(PoolError::NoSuchField(handle.into()))
+        })
     }
 
     /// Tries to mutably borrow an object and fetch its component of specified type.
     #[inline]
-    pub fn try_get_component_of_type_mut<C>(
-        &mut self,
-        handle: Handle<T>,
-    ) -> Result<&mut C, PoolError>
+    pub fn try_get_or_field_mut<C>(&mut self, handle: Handle<T>) -> Result<&mut C, PoolError>
     where
-        C: 'static,
+        C: Reflect,
     {
-        self.try_borrow_mut(handle)
-            .and_then(|n| {
-                n.query_component_mut(TypeId::of::<C>())
-                    .ok_or(PoolError::NoSuchComponent(handle.into()))
-            })
-            .and_then(|c| {
-                c.downcast_mut()
-                    .ok_or(PoolError::InvalidType(handle.into()))
-            })
+        self.try_borrow_mut(handle).and_then(|n| {
+            (n as &mut dyn Reflect)
+                .self_or_field_mut::<C>()
+                .ok_or(PoolError::NoSuchField(handle.into()))
+        })
     }
 }
 

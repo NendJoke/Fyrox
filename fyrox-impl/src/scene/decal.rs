@@ -28,7 +28,6 @@ use crate::{
         math::aabb::AxisAlignedBoundingBox,
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
         uuid::{uuid, Uuid},
         variable::InheritableVariable,
         visitor::prelude::*,
@@ -108,8 +107,11 @@ use std::ops::{Deref, DerefMut};
 ///         .build(graph)
 /// }
 /// ```
-#[derive(Debug, Visit, Default, Clone, Reflect, ComponentProvider)]
-#[reflect(derived_type = "Node")]
+#[derive(Debug, Visit, Default, Clone, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "Node",
+    type_uuid = "c4d24e48-edd1-4fb2-ad82-4b3d3ea985d8"
+)]
 pub struct Decal {
     base: Base,
 
@@ -138,12 +140,6 @@ impl Deref for Decal {
 impl DerefMut for Decal {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.base
-    }
-}
-
-impl TypeUuidProvider for Decal {
-    fn type_uuid() -> Uuid {
-        uuid!("c4d24e48-edd1-4fb2-ad82-4b3d3ea985d8")
     }
 }
 
@@ -239,7 +235,7 @@ impl NodeTrait for Decal {
     }
 
     fn id(&self) -> Uuid {
-        Self::type_uuid()
+        <Self as Reflect>::type_info().type_uuid
     }
 }
 

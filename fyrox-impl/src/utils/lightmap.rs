@@ -53,8 +53,8 @@ use crate::{
     utils::{uvgen, uvgen::SurfaceDataPatch},
 };
 use fxhash::FxHashMap;
-use fyrox_core::{ok_or_continue, warn, Uuid};
-use fyrox_graph::SceneGraphNode;
+use fyrox_core::{ok_or_continue, warn};
+use fyrox_graph::NodeWrapper;
 use fyrox_material::Material;
 use fyrox_resource::ResourceData;
 use lightmap::light::{
@@ -124,7 +124,8 @@ pub fn apply_surface_data_patch(
 }
 
 /// Lightmap entry.
-#[derive(Default, Clone, Debug, Visit, Reflect)]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "17c570ce-0e98-42c0-b93f-ddc97012380d")]
 pub struct LightmapEntry {
     /// Lightmap texture.
     ///
@@ -139,7 +140,7 @@ pub struct LightmapEntry {
 }
 
 #[doc(hidden)]
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub struct SurfaceDataPatchWrapper(pub SurfaceDataPatch);
 
 impl Visit for SurfaceDataPatchWrapper {
@@ -165,7 +166,8 @@ impl Visit for SurfaceDataPatchWrapper {
 }
 
 /// Lightmap is a texture with precomputed lighting.
-#[derive(Clone, Debug, Visit, Reflect)]
+#[derive(Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "931d2ee2-f8f0-42e7-9d9b-3c429ca75128")]
 pub struct Lightmap {
     /// Name of the property this light map is bound to in all materials across all
     /// surfaces for which the light map was generated.

@@ -31,8 +31,6 @@ use crate::{
         log::Log,
         pool::{Handle, ObjectOrVariant},
         reflect::{prelude::*, CastError, Reflect},
-        type_traits::prelude::*,
-        uuid_provider,
         visitor::prelude::*,
     },
     expander::ExpanderBuilder,
@@ -56,6 +54,7 @@ use fyrox_graph::{
     constructor::{ConstructorProvider, GraphNodeConstructor},
     SceneGraph,
 };
+use std::ops::Deref;
 use std::{
     any::{Any, TypeId},
     fmt::{Debug, Display, Formatter},
@@ -200,19 +199,17 @@ impl PropertyAction {
                 let mut value = Some(value);
                 target.resolve_path_mut(path, &mut |result| {
                     if let Ok(field) = result {
-                        field.as_list_mut(&mut |result| {
-                            if let Some(list) = result {
-                                if let Err(value) = list.reflect_push(value.take().unwrap()) {
-                                    result_callback(Err(Self::AddItem { value }))
-                                } else {
-                                    result_callback(Ok(None))
-                                }
+                        if let Some(list) = field.as_list_mut() {
+                            if let Err(value) = list.reflect_push(value.take().unwrap()) {
+                                result_callback(Err(Self::AddItem { value }))
                             } else {
-                                result_callback(Err(Self::AddItem {
-                                    value: value.take().unwrap(),
-                                }))
+                                result_callback(Ok(None))
                             }
-                        })
+                        } else {
+                            result_callback(Err(Self::AddItem {
+                                value: value.take().unwrap(),
+                            }))
+                        }
                     } else {
                         result_callback(Err(Self::AddItem {
                             value: value.take().unwrap(),
@@ -222,17 +219,15 @@ impl PropertyAction {
             }
             PropertyAction::RemoveItem { index } => target.resolve_path_mut(path, &mut |result| {
                 if let Ok(field) = result {
-                    field.as_list_mut(&mut |result| {
-                        if let Some(list) = result {
-                            if let Some(value) = list.reflect_remove(index) {
-                                result_callback(Ok(Some(value)))
-                            } else {
-                                result_callback(Err(Self::RemoveItem { index }))
-                            }
+                    if let Some(list) = field.as_list_mut() {
+                        if let Some(value) = list.reflect_remove(index) {
+                            result_callback(Ok(Some(value)))
                         } else {
                             result_callback(Err(Self::RemoveItem { index }))
                         }
-                    })
+                    } else {
+                        result_callback(Err(Self::RemoveItem { index }))
+                    }
                 } else {
                     result_callback(Err(Self::RemoveItem { index }))
                 }
@@ -261,7 +256,7 @@ where
     }
 
     fn into_box_reflect(self: Box<Self>) -> Box<dyn Reflect> {
-        Box::new(*self.into_any().downcast::<T>().unwrap())
+        Box::new(*(self as Box<dyn Reflect>).downcast::<T>().unwrap())
     }
 }
 
@@ -291,23 +286,21 @@ impl PartialEq for ObjectValue {
 }
 
 impl ObjectValue {
-    pub fn cast_value<T: 'static>(&self, func: &mut dyn FnMut(Option<&T>)) {
-        (*self.value).as_any(&mut |any| func(any.downcast_ref::<T>()))
+    pub fn cast_value<T: Reflect>(&self) -> Option<&T> {
+        (&*self.value as &dyn Reflect).downcast_ref::<T>()
     }
 
-    pub fn cast_clone<T: Clone + 'static>(&self, func: &mut dyn FnMut(Option<T>)) {
-        (*self.value).as_any(&mut |any| func(any.downcast_ref::<T>().cloned()))
+    pub fn cast_clone<T: Clone + Reflect>(&self) -> Option<T> {
+        (&*self.value as &dyn Reflect).downcast_ref::<T>().cloned()
     }
 
-    pub fn try_override<T: Clone + 'static>(&self, value: &mut T) -> bool {
-        let mut result = false;
-        (*self.value).as_any(&mut |any| {
-            if let Some(self_value) = any.downcast_ref::<T>() {
-                *value = self_value.clone();
-                result = true;
-            }
-        });
-        false
+    pub fn try_override<T: Clone + Reflect>(&self, value: &mut T) -> bool {
+        if let Some(self_value) = (&*self.value as &dyn Reflect).downcast_ref::<T>() {
+            *value = self_value.clone();
+            true
+        } else {
+            false
+        }
     }
 
     pub fn into_box_reflect(self) -> Box<dyn Reflect> {
@@ -436,9 +429,25 @@ impl MessageData for InspectorMessage {}
 /// [fyroxed_base::inspector::EditorEnvironment](https://docs.rs/fyroxed_base/latest/fyroxed_base/inspector/struct.EditorEnvironment.html).
 /// Instead, when a property editor needs to talk to the application using the Inspector,
 /// it can attempt to cast InspectorEnvironment to whatever type it might be.
-pub trait InspectorEnvironment: Any + Send + Sync + ComponentProvider {
+pub trait InspectorEnvironment: Send + Sync + Reflect {
     fn name(&self) -> String;
-    fn as_any(&self) -> &dyn Any;
+}
+
+#[derive(Clone)]
+pub struct InspectorEnvironmentContainer(pub Arc<dyn InspectorEnvironment>);
+
+impl PartialEq for InspectorEnvironmentContainer {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.try_compare(&*other.0).unwrap_or_default()
+    }
+}
+
+impl Deref for InspectorEnvironmentContainer {
+    type Target = dyn InspectorEnvironment;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
 }
 
 /// Inspector is a widget, that allows you to generate visual representation for internal fields an arbitrary
@@ -464,27 +473,24 @@ pub trait InspectorEnvironment: Any + Send + Sync + ComponentProvider {
 /// # };
 /// # use std::sync::Arc;
 /// # use strum_macros::{AsRefStr, EnumString, VariantNames};
-/// # use fyrox_core::uuid_provider;
 /// # use fyrox_ui::inspector::{Inspector, InspectorContextArgs};
 ///
 /// #[derive(Reflect, Debug, Clone)]
+/// #[reflect(type_uuid = "391b9424-8fe2-4525-a98e-3c930487fcf1")]
 /// struct MyObject {
 ///     foo: String,
 ///     bar: u32,
 ///     stuff: MyEnum,
 /// }
 ///
-/// uuid_provider!(MyObject = "391b9424-8fe2-4525-a98e-3c930487fcf1");
-///
 /// // Enumeration requires a bit more traits to be implemented. It must provide a way to turn
 /// // enum into a string.
 /// #[derive(Reflect, Debug, Clone, AsRefStr, EnumString, VariantNames)]
+/// #[reflect(type_uuid = "a93ec1b5-e7c8-4919-ac19-687d8c99f6bd")]
 /// enum MyEnum {
 ///     SomeVariant,
 ///     YetAnotherVariant { baz: f32 },
 /// }
-///
-/// uuid_provider!(MyEnum = "a93ec1b5-e7c8-4919-ac19-687d8c99f6bd");
 ///
 /// fn create_inspector(ctx: &mut BuildContext) -> Handle<Inspector> {
 ///     // Initialize an object first.
@@ -513,6 +519,7 @@ pub trait InspectorEnvironment: Any + Send + Sync + ComponentProvider {
 ///         generate_property_string_values: true,
 ///         filter: Default::default(),
 ///         name_column_width: 150.0,
+///         hide_name_column: false,
 ///         base_path: Default::default(),
 ///         has_parent_object: false
 ///     });
@@ -522,8 +529,11 @@ pub trait InspectorEnvironment: Any + Send + Sync + ComponentProvider {
 ///         .build(ctx)
 /// }
 /// ```
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "c599c0f5-f749-4033-afed-1a9949c937a1"
+)]
 pub struct Inspector {
     pub widget: Widget,
     #[reflect(hidden)]
@@ -572,7 +582,7 @@ impl Inspector {
         object: &mut dyn Reflect,
         clipboard_value: &mut Option<Box<dyn Reflect>>,
     ) {
-        let object_type_name = object.type_name();
+        let object_type_name = object.type_info_ref().type_name;
 
         match msg {
             InspectorMessage::PropertyContextMenuOpened { path } => {
@@ -584,11 +594,7 @@ impl Inspector {
                         can_clone = field.try_clone_box().is_some();
 
                         if let Some(clipboard_value) = clipboard_value {
-                            clipboard_value.as_any(&mut |clipboard_value| {
-                                field.as_any(&mut |field| {
-                                    can_paste = field.type_id() == clipboard_value.type_id();
-                                })
-                            });
+                            can_paste = field.type_id() == (**clipboard_value).type_id();
                         }
                     }
                 });
@@ -611,7 +617,7 @@ impl Inspector {
                                 "Unable to clone the field {}, because it is non-cloneable! \
                             Field type is: {}",
                                 path,
-                                field.type_name()
+                                field.type_info_ref().type_name
                             );
                         }
                     } else {
@@ -653,7 +659,7 @@ impl Inspector {
                             "Unable to clone the field {}, because it is non-cloneable! \
                             Field type is: {}",
                             dest,
-                            value.type_name()
+                            value.type_info_ref().type_name
                         );
                     }
                 } else {
@@ -825,11 +831,12 @@ pub struct InspectorContext {
     pub property_definitions: Arc<PropertyEditorDefinitionContainer>,
     /// Untyped information from the application that is using the inspector. This can be used by editors that may be
     /// supplied by that application, if those editors know the actual type of this value to be able to successfully cast it.
-    pub environment: Option<Arc<dyn InspectorEnvironment>>,
+    pub environment: Option<InspectorEnvironmentContainer>,
     /// Type id of the object for which the context was created.
     pub object_type_id: TypeId,
     /// A width of the property name column.
     pub name_column_width: f32,
+    pub hide_name_column: bool,
     /// A flag, that defines whether the inspectable object has a parent object from which it can
     /// obtain initial property values when clicking on "Revert" button. This flag is used only for
     /// [`crate::core::variable::InheritableVariable`] properties, primarily to hide "Revert" button
@@ -844,9 +851,7 @@ impl PartialEq for InspectorContext {
 }
 
 fn object_type_id(object: &dyn Reflect) -> TypeId {
-    let mut object_type_id = None;
-    object.as_any(&mut |any| object_type_id = Some(any.type_id()));
-    object_type_id.unwrap()
+    object.type_id()
 }
 
 impl Default for InspectorContext {
@@ -861,6 +866,7 @@ impl Default for InspectorContext {
             environment: None,
             object_type_id: ().type_id(),
             name_column_width: 150.0,
+            hide_name_column: false,
             has_parent_object: false,
         }
     }
@@ -893,14 +899,9 @@ fn make_expander_check_box(
     layer_index: usize,
     property_name: &str,
     property_description: &str,
+    hide_name: bool,
     ctx: &mut BuildContext,
 ) -> Handle<CheckBox> {
-    let description = if property_description.is_empty() {
-        property_name.to_string()
-    } else {
-        format!("{property_name}\n\n{property_description}")
-    };
-
     let handle = CheckBoxBuilder::new(
         WidgetBuilder::new()
             .with_vertical_alignment(VerticalAlignment::Center)
@@ -915,7 +916,14 @@ fn make_expander_check_box(
         .with_stroke_thickness(Thickness::zero().into())
         .build(ctx),
     )
-    .with_content(
+    .with_content(if hide_name {
+        Handle::NONE
+    } else {
+        let description = if property_description.is_empty() {
+            property_name.to_string()
+        } else {
+            format!("{property_name}\n\n{property_description}")
+        };
         TextBuilder::new(
             WidgetBuilder::new()
                 .with_opt_tooltip(make_tooltip(ctx, &description))
@@ -924,8 +932,8 @@ fn make_expander_check_box(
         )
         .with_vertical_text_alignment(VerticalAlignment::Center)
         .with_text(property_name)
-        .build(ctx),
-    )
+        .build(ctx)
+    })
     .checked(Some(true))
     .with_check_mark(make_arrow(ctx, ArrowDirection::Bottom, 8.0))
     .with_uncheck_mark(make_arrow(ctx, ArrowDirection::Right, 8.0))
@@ -951,6 +959,7 @@ pub fn make_expander_container(
     header: Handle<impl ObjectOrVariant<UiNode>>,
     content: Handle<impl ObjectOrVariant<UiNode>>,
     width: f32,
+    hide_name_column: bool,
     ctx: &mut BuildContext,
 ) -> Handle<UiNode> {
     ExpanderBuilder::new(WidgetBuilder::new())
@@ -958,9 +967,14 @@ pub fn make_expander_container(
             layer_index,
             property_name,
             description,
+            hide_name_column,
             ctx,
         ))
-        .with_expander_column(Column::strict(width))
+        .with_expander_column(if hide_name_column {
+            Column::strict(0.0)
+        } else {
+            Column::strict(width)
+        })
         .with_expanded(true)
         .with_header(header)
         .with_content(content)
@@ -988,16 +1002,22 @@ fn make_simple_property_container(
     editor: Handle<impl ObjectOrVariant<UiNode>>,
     description: &str,
     width: f32,
+    hide_name_column: bool,
     ctx: &mut BuildContext,
 ) -> Handle<UiNode> {
     ctx[editor.to_base()].set_row(0).set_column(1);
 
-    let tooltip = make_tooltip(ctx, description);
-    ctx[title].set_tooltip(tooltip);
+    if title.is_some() {
+        let tooltip = make_tooltip(ctx, description);
+        ctx[title].set_tooltip(tooltip);
+    }
 
     GridBuilder::new(WidgetBuilder::new().with_child(title).with_child(editor))
         .add_row(Row::auto())
-        .add_columns(vec![Column::strict(width), Column::stretch()])
+        .add_columns(vec![
+            Column::strict(if hide_name_column { 0.0 } else { width }),
+            Column::stretch(),
+        ])
         .build(ctx)
         .to_base()
 }
@@ -1006,6 +1026,16 @@ fn make_simple_property_container(
 /// Return true to include a field. If None, then all fields are included.
 #[derive(Default, Clone)]
 pub struct PropertyFilter(pub Option<Arc<dyn Fn(&dyn Reflect) -> bool + Send + Sync>>);
+
+impl PartialEq for PropertyFilter {
+    fn eq(&self, other: &Self) -> bool {
+        if let (Some(a), Some(b)) = (self.0.as_ref(), other.0.as_ref()) {
+            Arc::ptr_eq(a, b)
+        } else {
+            false
+        }
+    }
+}
 
 impl PropertyFilter {
     pub fn new<T>(func: T) -> Self
@@ -1044,11 +1074,12 @@ pub struct InspectorContextArgs<'a, 'b, 'c> {
     pub object: &'a dyn Reflect,
     pub ctx: &'b mut BuildContext<'c>,
     pub definition_container: Arc<PropertyEditorDefinitionContainer>,
-    pub environment: Option<Arc<dyn InspectorEnvironment>>,
+    pub environment: Option<InspectorEnvironmentContainer>,
     pub layer_index: usize,
     pub generate_property_string_values: bool,
     pub filter: PropertyFilter,
     pub name_column_width: f32,
+    pub hide_name_column: bool,
     pub base_path: String,
     /// A flag, that defines whether the inspectable object has a parent object from which it can
     /// obtain initial property values when clicking on "Revert" button. This flag is used only for
@@ -1081,6 +1112,7 @@ impl InspectorContext {
             generate_property_string_values,
             filter,
             name_column_width,
+            hide_name_column,
             base_path,
             has_parent_object,
         } = context;
@@ -1091,12 +1123,12 @@ impl InspectorContext {
         object.fields_ref(&mut |fields_ref| {
             for (i, info) in fields_ref.iter().enumerate() {
                 let field_text = if generate_property_string_values {
-                    format!("{:?}", info.value.field_value_as_reflect())
+                    format!("{:?}", info.value)
                 } else {
                     Default::default()
                 };
 
-                if !filter.pass(info.value.field_value_as_reflect()) {
+                if !filter.pass(info.value) {
                     continue;
                 }
 
@@ -1126,6 +1158,7 @@ impl InspectorContext {
                             generate_property_string_values,
                             filter: filter.clone(),
                             name_column_width,
+                            hide_name_column,
                             base_path: property_path.clone(),
                             has_parent_object,
                         },
@@ -1134,10 +1167,15 @@ impl InspectorContext {
                             let (container, editor) = match instance {
                                 PropertyEditorInstance::Simple { editor } => (
                                     make_simple_property_container(
-                                        create_header(ctx, info.display_name, layer_index),
+                                        if hide_name_column {
+                                            Handle::NONE
+                                        } else {
+                                            create_header(ctx, info.display_name, layer_index)
+                                        },
                                         editor,
                                         &description,
                                         name_column_width,
+                                        hide_name_column,
                                         ctx,
                                     ),
                                     editor,
@@ -1181,6 +1219,7 @@ impl InspectorContext {
                                     .build(ctx),
                                 &description,
                                 name_column_width,
+                                false,
                                 ctx,
                             )
                         }
@@ -1195,11 +1234,12 @@ impl InspectorContext {
                             .with_vertical_text_alignment(VerticalAlignment::Center)
                             .with_text(format!(
                                 "Property Editor Is Missing For Type {}!",
-                                info.value.type_name()
+                                info.value.type_info_ref().type_name
                             ))
                             .build(ctx),
                         &description,
                         name_column_width,
+                        false,
                         ctx,
                     ));
                 }
@@ -1265,6 +1305,7 @@ impl InspectorContext {
             environment,
             object_type_id: object_type_id(object),
             name_column_width,
+            hide_name_column,
             has_parent_object,
         }
     }
@@ -1296,7 +1337,7 @@ impl InspectorContext {
 
         object.fields_ref(&mut |fields_ref| {
             for info in fields_ref {
-                if !filter.pass(info.value.field_value_as_reflect()) {
+                if !filter.pass(info.value) {
                     continue;
                 }
 
@@ -1316,6 +1357,7 @@ impl InspectorContext {
                             generate_property_string_values,
                             filter: filter.clone(),
                             name_column_width: self.name_column_width,
+                            hide_name_column: self.hide_name_column,
                             base_path: base_path.clone(),
                             has_parent_object: self.has_parent_object,
                         };
@@ -1374,8 +1416,6 @@ impl InspectorContext {
             .unwrap_or_default()
     }
 }
-
-uuid_provider!(Inspector = "c599c0f5-f749-4033-afed-1a9949c937a1");
 
 impl Control for Inspector {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {

@@ -116,7 +116,8 @@ pub struct AutoTileMacro {
     autotiler: TileSetAutoTiler,
 }
 
-#[derive(Default, Debug, Clone, Reflect)]
+#[derive(Default, Debug, PartialEq, Clone, Reflect)]
+#[reflect(type_uuid = "e50fa366-145d-4491-8126-acdd162031ea")]
 struct CellData {
     terrain_id: TileTerrainId,
     #[reflect(hidden)]
@@ -137,8 +138,8 @@ impl Visit for CellData {
     }
 }
 
-#[derive(Debug, Default, Clone, Visit, Reflect, TypeUuidProvider)]
-#[type_uuid(id = "b320543d-3df0-43fd-b0d9-60a398f49853")]
+#[derive(Debug, Default, Clone, PartialEq, Visit, Reflect)]
+#[reflect(type_uuid = "b320543d-3df0-43fd-b0d9-60a398f49853")]
 pub(super) struct AutoTileInstance {
     frequency_property: Option<TileSetPropertyF32>,
     pattern_property: Option<TileSetPropertyNine>,
@@ -150,7 +151,7 @@ pub(super) struct AutoTileInstance {
     widgets: InstanceCellWidgets,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, PartialEq, Clone)]
 struct InstanceCellWidgets {
     handle: Handle<UiNode>,
     value_field: MacroPropertyValueField,
@@ -159,10 +160,6 @@ struct InstanceCellWidgets {
 }
 
 impl ResourceData for AutoTileInstance {
-    fn type_uuid(&self) -> Uuid {
-        <Self as TypeUuidProvider>::type_uuid()
-    }
-
     fn save(&mut self, _path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
         Err("Saving is not supported!".to_string().into())
     }

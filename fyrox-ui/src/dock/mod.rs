@@ -26,10 +26,7 @@
 //! for windows.
 
 use crate::{
-    core::{
-        log::Log, pool::Handle, reflect::prelude::*, type_traits::prelude::*, uuid_provider,
-        visitor::prelude::*,
-    },
+    core::{log::Log, pool::Handle, reflect::prelude::*, visitor::prelude::*},
     dock::config::{DockingManagerLayoutDescriptor, FloatingWindowDescriptor, TileDescriptor},
     message::UiMessage,
     widget::{Widget, WidgetBuilder, WidgetMessage},
@@ -163,8 +160,11 @@ impl MessageData for DockingManagerMessage {}
 /// To be able to restore the layout to its defaults, just create a desired layout from code,
 /// save the layout and use the returned layout descriptor when you need to restore the layout
 /// to its defaults.
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "b04299f7-3f6b-45f1-89a6-0dce4ad929e1"
+)]
 pub struct DockingManager {
     pub widget: Widget,
     pub floating_windows: RefCell<Vec<Handle<Window>>>,
@@ -184,8 +184,6 @@ impl ConstructorProvider<UiNode, UserInterface> for DockingManager {
 }
 
 crate::define_widget_deref!(DockingManager);
-
-uuid_provider!(DockingManager = "b04299f7-3f6b-45f1-89a6-0dce4ad929e1");
 
 impl Control for DockingManager {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
@@ -303,7 +301,7 @@ impl DockingManager {
 
                 let floating_window = ui
                     .find_handle(ui.root(), &mut |n| {
-                        n.has_component::<Window>() && n.name == floating_window_desc.name
+                        n.is_or_has_field::<Window>() && n.name == floating_window_desc.name
                     })
                     .to_variant();
                 if floating_window.is_some() {

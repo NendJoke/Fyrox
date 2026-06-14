@@ -96,7 +96,8 @@ fn default_run_cargo_update() -> bool {
     true
 }
 
-#[derive(Default, Serialize, Deserialize, Reflect, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, PartialEq, Reflect, Clone, Debug)]
+#[reflect(type_uuid = "fab68a7a-58ce-40f5-a354-a7789c43efd3")]
 pub struct SettingsData {
     /// Defines a command to run an IDE in a project folder. This command should use either
     /// %MANIFEST_PATH% or %MANIFEST_DIR% built-in variable to provide the selected project path to
@@ -212,7 +213,7 @@ impl Settings {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Project {
     pub manifest_path: PathBuf,
     pub name: String,
@@ -242,6 +243,7 @@ impl SettingsWindow {
             generate_property_string_values: true,
             filter: Default::default(),
             name_column_width: 170.0,
+            hide_name_column: false,
             base_path: Default::default(),
             has_parent_object: false,
         });

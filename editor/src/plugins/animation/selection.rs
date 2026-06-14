@@ -30,7 +30,7 @@ use crate::{
         },
         engine::Engine,
         generic_animation::{Animation, AnimationContainer},
-        graph::{SceneGraph, SceneGraphNode},
+        graph::{NodeWrapper, SceneGraph},
         gui::inspector::PropertyChanged,
         scene::SceneContainer,
     },
@@ -104,11 +104,11 @@ pub fn get_animations_container<'a, N: Reflect>(
         scenes[game_scene.scene]
             .graph
             .node(ErasedHandle::from(handle).into())
-            .component_ref::<InheritableVariable<AnimationContainer<Handle<N>>>>()
+            .self_or_field_ref::<InheritableVariable<AnimationContainer<Handle<N>>>>()
     } else if let Some(ui) = controller.downcast_ref::<UiScene>() {
         ui.ui
             .node(ErasedHandle::from(handle).into())
-            .component_ref::<InheritableVariable<AnimationContainer<Handle<N>>>>()
+            .self_or_field_ref::<InheritableVariable<AnimationContainer<Handle<N>>>>()
     } else {
         None
     }
@@ -135,7 +135,7 @@ where
                     self.entities.first()
                 {
                     if let Some(signal) = animation.signals().iter().find(|s| s.id == *id) {
-                        (callback)(EntityInfo::with_no_parent(signal as &dyn Reflect));
+                        (callback)(EntityInfo::with_no_parent(signal));
                     }
                 }
             }
@@ -208,14 +208,16 @@ where
                 engine.scenes[game_scene.scene]
                     .graph
                     .node(ErasedHandle::from(self.animation_player).into())
-                    .doc()
+                    .type_info_ref()
+                    .doc_comment
                     .to_string(),
             )
         } else {
             controller.downcast_ref::<UiScene>().map(|ui| {
                 ui.ui
                     .node(ErasedHandle::from(self.animation_player).into())
-                    .doc()
+                    .type_info_ref()
+                    .doc_comment
                     .to_string()
             })
         }

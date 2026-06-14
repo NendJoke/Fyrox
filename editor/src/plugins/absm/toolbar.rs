@@ -21,10 +21,10 @@
 use crate::{
     command::{Command, CommandGroup},
     fyrox::{
-        core::{color::Color, pool::Handle},
+        core::{color::Color, pool::Handle, pool::ObjectOrVariantHelper, reflect::Reflect},
         fxhash::FxHashSet,
         generic_animation::machine::{mask::LayerMask, Machine, MachineLayer},
-        graph::{PrefabData, SceneGraph, SceneGraphNode},
+        graph::{NodeWrapper, PrefabData, SceneGraph},
         gui::{
             button::{Button, ButtonMessage},
             dropdown_list::{DropdownList, DropdownListBuilder, DropdownListMessage},
@@ -55,7 +55,7 @@ use crate::{
         Selection,
     },
 };
-use std::any::TypeId;
+use std::{any::TypeId, marker::PhantomData};
 
 pub struct Toolbar {
     pub panel: Handle<StackPanel>,
@@ -157,7 +157,7 @@ impl Toolbar {
         }
     }
 
-    pub fn handle_ui_message<P, G, N>(
+    pub fn handle_ui_message<P, G, N, AnimationPlayer>(
         &mut self,
         message: &UiMessage,
         editor_selection: &Selection,
@@ -167,8 +167,10 @@ impl Toolbar {
     ) -> ToolbarAction
     where
         P: PrefabData<Graph = G>,
-        G: SceneGraph<Node = N, Prefab = P>,
-        N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+        G: SceneGraph<NodeWrapper = N, Prefab = P>,
+        N: NodeWrapper<SceneGraph = G, ResourceData = P>,
+        AnimationPlayer: Reflect,
+        PhantomData<AnimationPlayer>: ObjectOrVariantHelper<N, AnimationPlayer>,
     {
         let selection = fetch_selection(editor_selection);
 
@@ -214,16 +216,17 @@ impl Toolbar {
                     inner_type_name: std::any::type_name::<N>().to_string(),
                     handle: Default::default(),
                     inner_type_id: TypeId::of::<N>(),
-                    derived_type_ids: N::derived_types().to_vec(),
+                    derived_type_ids: N::type_info().derived_types.to_vec(),
                     children: vec![],
                 };
 
                 // Collect all scene nodes from every animation in the associated animation player.
                 let mut unique_nodes = FxHashSet::default();
                 if let Some(machine) = machine_container_ref(graph, selection.absm_node_handle) {
-                    if let Some((_, animations)) =
-                        animation_container_ref(graph, selection.absm_node_handle)
-                    {
+                    if let Some((_, animations)) = animation_container_ref::<G, N, AnimationPlayer>(
+                        graph,
+                        selection.absm_node_handle,
+                    ) {
                         for animation in animations.iter() {
                             for track_binding in animation.track_bindings().values() {
                                 unique_nodes.insert(track_binding.target());
@@ -373,8 +376,8 @@ impl Toolbar {
         selection: &AbsmSelection<N>,
     ) where
         P: PrefabData<Graph = G>,
-        G: SceneGraph<Node = N, Prefab = P>,
-        N: SceneGraphNode<SceneGraph = G, ResourceData = P>,
+        G: SceneGraph<NodeWrapper = N, Prefab = P>,
+        N: NodeWrapper<SceneGraph = G, ResourceData = P>,
     {
         let layers = machine
             .layers()

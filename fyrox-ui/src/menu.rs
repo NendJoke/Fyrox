@@ -31,8 +31,8 @@ use crate::{
     brush::Brush,
     control_trait_proxy_impls,
     core::{
-        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*, type_traits::prelude::*,
-        uuid_provider, variable::InheritableVariable, visitor::prelude::*,
+        algebra::Vector2, color::Color, pool::Handle, reflect::prelude::*,
+        variable::InheritableVariable, visitor::prelude::*,
     },
     decorator::{DecoratorBuilder, DecoratorMessage},
     grid::{Column, GridBuilder, Row},
@@ -50,10 +50,9 @@ use crate::{
 use fyrox_core::pool::{HandlesVecExtension, ObjectOrVariant};
 use fyrox_graph::{
     constructor::{ConstructorProvider, GraphNodeConstructor},
-    SceneGraph, SceneGraphNode,
+    NodeWrapper, SceneGraph,
 };
 use std::{
-    any::TypeId,
     cmp::Ordering,
     fmt::{Debug, Formatter},
     ops::{Deref, DerefMut},
@@ -198,12 +197,14 @@ impl MessageData for MenuItemMessage {}
 ///         .build(ctx)
 /// }
 /// ```
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "582a04f3-a7fd-4e70-bbd1-eb95e2275b75"
+)]
 pub struct Menu {
     widget: Widget,
     active: bool,
-    #[component(include)]
     items: ItemsContainer,
     /// A flag, that defines whether the menu should restrict all the mouse input or not.
     pub restrict_picking: InheritableVariable<bool>,
@@ -223,8 +224,6 @@ impl ConstructorProvider<UiNode, UserInterface> for Menu {
 }
 
 crate::define_widget_deref!(Menu);
-
-uuid_provider!(Menu = "582a04f3-a7fd-4e70-bbd1-eb95e2275b75");
 
 impl Control for Menu {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {
@@ -328,6 +327,7 @@ impl Control for Menu {
 
 /// A set of possible placements of a popup with items of a menu item.
 #[derive(Copy, Clone, PartialOrd, PartialEq, Eq, Hash, Visit, Reflect, Default, Debug)]
+#[reflect(type_uuid = "667bb0c3-9f55-4850-bb19-b9fdf3f8d27b")]
 pub enum MenuItemPlacement {
     /// Bottom placement.
     Bottom,
@@ -337,14 +337,16 @@ pub enum MenuItemPlacement {
 }
 
 #[derive(Copy, Clone, PartialOrd, PartialEq, Eq, Hash, Visit, Reflect, Default, Debug)]
+#[reflect(type_uuid = "667bb0c3-9f55-4850-bb19-b9fdf3f8d27b")]
 enum NavigationDirection {
     #[default]
     Horizontal,
     Vertical,
 }
 
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
 #[doc(hidden)]
+#[reflect(type_uuid = "667bb0c3-9f55-4850-bb19-b9fdf3f8d27b")]
 pub struct ItemsContainer {
     #[doc(hidden)]
     pub items: InheritableVariable<Vec<Handle<MenuItem>>>,
@@ -409,13 +411,15 @@ impl ItemsContainer {
 
 /// Menu item is a widget with arbitrary content, that has a "floating" panel (popup) for sub-items if the menu item. This was menu items can form
 /// arbitrary hierarchies. See [`Menu`] docs for examples.
-#[derive(Default, Clone, Debug, Visit, Reflect, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "72e002c6-6060-4583-b5b7-0c5500244fef"
+)]
 pub struct MenuItem {
     /// Base widget of the menu item.
     pub widget: Widget,
     /// Current items of the menu item
-    #[component(include)]
     pub items_container: ItemsContainer,
     /// A handle of a popup that holds the items of the menu item.
     pub items_panel: InheritableVariable<Handle<UiNode>>,
@@ -468,7 +472,7 @@ impl MenuItem {
         let mut menu_item_ref_container = Some(self);
         while let Some(menu_item_ref) = menu_item_ref_container {
             let popup_handle =
-                menu_item_ref.find_by_criteria_up(ui, |n| n.has_component::<ContextMenu>());
+                menu_item_ref.find_by_criteria_up(ui, |n| n.is_or_has_field::<ContextMenu>());
 
             ui.send(
                 menu_item_ref.handle,
@@ -500,7 +504,7 @@ impl MenuItem {
 fn find_menu(from: Handle<UiNode>, ui: &UserInterface) -> Handle<UiNode> {
     let mut handle = from;
     while handle.is_some() {
-        if let Some((_, panel)) = ui.find_component_up::<ContextMenu>(handle) {
+        if let Some((_, panel)) = ui.find_self_or_field_up::<ContextMenu>(handle) {
             // Continue search from parent menu item of popup.
             handle = panel.parent_menu_item.to_base();
         } else {
@@ -515,9 +519,9 @@ fn is_any_menu_item_contains_point(ui: &UserInterface, pt: Vector2<f32>) -> bool
     for (handle, menu) in ui
         .nodes()
         .pair_iter()
-        .filter_map(|(h, n)| n.query_component::<MenuItem>().map(|menu| (h, menu)))
+        .filter_map(|(h, n)| n.self_or_field_ref::<MenuItem>().map(|menu| (h, menu)))
     {
-        if ui.find_component_up::<Menu>(handle).is_none()
+        if ui.find_self_or_field_up::<Menu>(handle).is_none()
             && menu.is_globally_visible()
             && menu.screen_bounds().contains(pt)
         {
@@ -526,8 +530,6 @@ fn is_any_menu_item_contains_point(ui: &UserInterface, pt: Vector2<f32>) -> bool
     }
     false
 }
-
-uuid_provider!(MenuItem = "72e002c6-6060-4583-b5b7-0c5500244fef");
 
 impl Control for MenuItem {
     fn on_remove(&self, sender: &Sender<UiMessage>) {
@@ -636,7 +638,9 @@ impl Control for MenuItem {
                     }
                 }
                 MenuItemMessage::Close { deselect } => {
-                    if let Some(panel) = ui.node(*self.items_panel).query_component::<ContextMenu>()
+                    if let Some(panel) = ui
+                        .node(*self.items_panel)
+                        .self_or_field_ref::<ContextMenu>()
                     {
                         if *panel.popup.is_open {
                             ui.send(*self.items_panel, PopupMessage::Close);
@@ -723,7 +727,7 @@ impl Control for MenuItem {
                         break;
                     } else {
                         let node = ui.node(handle);
-                        if let Some(panel) = node.component_ref::<ContextMenu>() {
+                        if let Some(panel) = node.self_or_field_ref::<ContextMenu>() {
                             // Once we found popup in chain, we must extract handle
                             // of parent menu item to continue search.
                             handle = panel.parent_menu_item.to_base();
@@ -734,7 +738,9 @@ impl Control for MenuItem {
                 }
 
                 if !found {
-                    if let Some(panel) = ui.node(*self.items_panel).query_component::<ContextMenu>()
+                    if let Some(panel) = ui
+                        .node(*self.items_panel)
+                        .self_or_field_ref::<ContextMenu>()
                     {
                         if *panel.popup.is_open {
                             ui.send(self.handle(), MenuItemMessage::Close { deselect: true });
@@ -754,7 +760,10 @@ impl Control for MenuItem {
         // Allow closing "orphaned" menus by clicking outside of them.
         if let OsEvent::MouseInput { state, .. } = event {
             if *state == ButtonState::Pressed {
-                if let Some(panel) = ui.node(*self.items_panel).query_component::<ContextMenu>() {
+                if let Some(panel) = ui
+                    .node(*self.items_panel)
+                    .self_or_field_ref::<ContextMenu>()
+                {
                     if *panel.popup.is_open {
                         // Ensure that the cursor is outside any menus.
                         if !is_any_menu_item_contains_point(ui, ui.cursor_position())
@@ -842,6 +851,7 @@ impl MenuBuilder {
 /// Allows you to set a content of a menu item either from a pre-built "layout" with icon/text/shortcut/arrow or a custom
 /// widget.
 #[derive(Clone, Debug, Visit, Reflect, PartialEq)]
+#[reflect(type_uuid = "eb2b6aa9-a626-4410-af1a-18e71359cbfa")]
 pub enum MenuItemContent {
     /// Quick-n-dirty way of building elements. It can cover most use cases - it builds classic menu item:
     ///
@@ -1130,12 +1140,13 @@ impl MenuItemBuilder {
 
 /// A simple wrapper over [`Popup`] widget, that holds the sub-items of a menu item and provides
 /// an ability for keyboard navigation.
-#[derive(Default, Clone, Debug, Visit, Reflect, TypeUuidProvider, ComponentProvider)]
-#[type_uuid(id = "ad8e9e76-c213-4232-9bab-80ebcabd69fa")]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "ad8e9e76-c213-4232-9bab-80ebcabd69fa"
+)]
 pub struct ContextMenu {
     /// Inner popup widget of the context menu.
-    #[component(include)]
     pub popup: Popup,
     /// Parent menu item of the context menu. Allows you to build chained context menus.
     pub parent_menu_item: Handle<MenuItem>,
@@ -1231,9 +1242,8 @@ fn keyboard_navigation(
     parent_menu_item: &dyn Control,
     parent_menu_item_handle: Handle<MenuItem>,
 ) -> bool {
-    let Some(items_container) = parent_menu_item
-        .query_component_ref(TypeId::of::<ItemsContainer>())
-        .and_then(|c| c.downcast_ref::<ItemsContainer>())
+    let Some(items_container) =
+        (parent_menu_item as &dyn Reflect).self_or_field_ref::<ItemsContainer>()
     else {
         return false;
     };

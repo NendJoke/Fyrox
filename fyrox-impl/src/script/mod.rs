@@ -28,11 +28,9 @@ use crate::{
     core::{
         log::Log,
         pool::{Handle, PoolError},
-        reflect::{FieldMut, FieldRef, Reflect, ReflectArray, ReflectList},
-        type_traits::ComponentProvider,
+        reflect::prelude::*,
         uuid::Uuid,
         visitor::{Visit, VisitResult, Visitor},
-        TypeUuidProvider,
     },
     engine::{input::InputState, task::TaskPoolHandler, GraphicsContext, ScriptMessageDispatcher},
     event::Event,
@@ -41,13 +39,13 @@ use crate::{
     scene::{base::NodeScriptMessage, node::Node, Scene},
 };
 use fyrox_core::pool::ObjectOrVariant;
+use fyrox_core::reflect::{FieldMetadata, TypeInfo};
 pub use fyrox_core_derive::ScriptMessagePayload;
 use fyrox_graph::SceneGraph;
 use std::{
-    any::{Any, TypeId},
+    any::Any,
     fmt::{Debug, Formatter},
     ops::{Deref, DerefMut},
-    str::FromStr,
     sync::mpsc::Sender,
 };
 
@@ -72,7 +70,7 @@ pub type DynamicTypeId = i64;
 ///     }
 /// ```
 pub trait ScriptMessagePayload: Any + Send + Debug {
-    /// By default messages are dispatched by [`TypeId::of`]`::<Self>()`.
+    /// By default messages are dispatched by `TypeId::of::<Self>()`.
     ///
     /// If this method returns [`Some`], then the message become dynamically typed.
     /// Dynamically typed messages are dispatched by the returned type identifier instead of static type.
@@ -227,22 +225,13 @@ pub trait BaseScript: Visit + Reflect + Send + Debug + 'static {
     ///     core::reflect::prelude::*,
     ///     core::uuid::Uuid,
     ///     script::ScriptTrait,
-    ///     core::TypeUuidProvider,
-    ///     core::uuid::uuid, core::type_traits::prelude::*
+    ///     core::uuid::uuid,
     /// };
     ///
-    /// #[derive(Reflect, Visit, Debug, Clone, ComponentProvider)]
+    /// #[derive(Reflect, Visit, Debug, Clone)]
+    /// // Use https://www.uuidgenerator.net/ to generate new UUID or an extension for your IDE.
+    /// #[reflect(type_uuid = "4cfbe65e-a2c1-474f-b123-57516d80b1f8")]
     /// struct MyScript { }
-    ///
-    /// // Implement TypeUuidProvider trait that will return type uuid of the type.
-    /// // Every script must implement the trait so the script can be registered in
-    /// // serialization context of the engine.
-    /// impl TypeUuidProvider for MyScript {
-    ///     fn type_uuid() -> Uuid {
-    ///         // Use https://www.uuidgenerator.net/ to generate new UUID.
-    ///         uuid!("4cfbe65e-a2c1-474f-b123-57516d80b1f8")
-    ///     }
-    /// }
     ///
     /// impl ScriptTrait for MyScript { }
     /// ```
@@ -251,7 +240,7 @@ pub trait BaseScript: Visit + Reflect + Send + Debug + 'static {
 
 impl<T> BaseScript for T
 where
-    T: Clone + ScriptTrait + Any + TypeUuidProvider,
+    T: Clone + ScriptTrait + Any,
 {
     fn clone_box(&self) -> Box<dyn ScriptTrait> {
         Box::new(self.clone())
@@ -266,7 +255,7 @@ where
     }
 
     fn id(&self) -> Uuid {
-        T::type_uuid()
+        <T as Reflect>::type_info().type_uuid
     }
 }
 
@@ -341,21 +330,21 @@ pub struct ScriptContext<'a, 'b, 'c> {
     ///
     /// ```rust
     /// # use fyrox_impl::{
-    /// #     core::{reflect::prelude::*, type_traits::prelude::*, visitor::prelude::*},
+    /// #     core::{reflect::prelude::*,  visitor::prelude::*},
     /// #     plugin::{Plugin, error::GameResult},
     /// #     script::{ScriptContext, ScriptTrait},
     /// # };
     /// #
     /// #[derive(Visit, Reflect, Default, Debug)]
-    /// #[reflect(non_cloneable)]
+    /// #[reflect(non_cloneable, type_uuid = "bf06a1f4-5e76-4560-a260-e64187a9484b")]
     /// struct Game {
     ///     player_name: String,
     /// }
     ///
     /// impl Plugin for Game {}
     ///
-    /// #[derive(Visit, Reflect, Clone, Default, Debug, TypeUuidProvider, ComponentProvider)]
-    /// #[type_uuid(id = "f732654e-5e3c-4b52-9a3d-44c0cfb14e18")]
+    /// #[derive(Visit, Reflect, Clone, Default, Debug)]
+    /// #[reflect(type_uuid = "f732654e-5e3c-4b52-9a3d-44c0cfb14e18")]
     /// struct MyScript {}
     ///
     /// impl ScriptTrait for MyScript {
@@ -609,7 +598,7 @@ impl UniversalScriptContext for ScriptDeinitContext<'_, '_, '_> {
 
 /// Script is a set predefined methods that are called on various stages by the engine. It is used to add
 /// custom behaviour to game entities.
-pub trait ScriptTrait: BaseScript + ComponentProvider {
+pub trait ScriptTrait: BaseScript {
     /// The method is called when the script wasn't initialized yet. It is guaranteed to be called once,
     /// and before any other methods of the script.
     ///
@@ -663,8 +652,7 @@ pub trait ScriptTrait: BaseScript + ComponentProvider {
     ///
     /// ```rust
     /// use fyrox_impl::{
-    ///     core::{reflect::prelude::*, uuid::Uuid, visitor::prelude::*, type_traits::prelude::*},
-    ///     core::TypeUuidProvider,
+    ///     core::{reflect::prelude::*, uuid::Uuid, visitor::prelude::*},
     ///     script::ScriptTrait,
     ///     plugin::error::GameResult,
     ///     script::{ScriptContext, ScriptMessageContext, ScriptMessagePayload},
@@ -672,14 +660,9 @@ pub trait ScriptTrait: BaseScript + ComponentProvider {
     ///
     /// struct Message;
     ///
-    /// #[derive(Reflect, Visit, Debug, Clone, ComponentProvider)]
+    /// #[derive(Reflect, Visit, Debug, Clone)]
+    /// #[reflect(type_uuid = "2649187c-46c2-485f-bf62-c9d3aef0c432")]
     /// struct MyScript {}
-    ///
-    /// # impl TypeUuidProvider for MyScript {
-    /// #     fn type_uuid() -> Uuid {
-    /// #         todo!();
-    /// #     }
-    /// # }
     ///
     /// impl ScriptTrait for MyScript {
     ///     fn on_start(&mut self, ctx: &mut ScriptContext) -> GameResult {
@@ -710,106 +693,22 @@ pub trait ScriptTrait: BaseScript + ComponentProvider {
 }
 
 /// A wrapper for actual script instance internals, it used by the engine.
-#[derive(Debug)]
+#[derive(Debug, Reflect)]
+#[reflect(type_uuid = "24ecd17d-9b46-4cc8-9d07-a1273e50a20e")]
 pub struct Script {
+    #[reflect(deref, display_name = "Script")]
     instance: Box<dyn ScriptTrait>,
+    #[reflect(hidden)]
     pub(crate) initialized: bool,
+    #[reflect(hidden)]
     pub(crate) started: bool,
 }
 
-impl TypeUuidProvider for Script {
-    fn type_uuid() -> Uuid {
-        Uuid::from_str("24ecd17d-9b46-4cc8-9d07-a1273e50a20e").unwrap()
-    }
-}
-
-impl Reflect for Script {
-    fn source_path() -> &'static str {
-        file!()
-    }
-
-    fn derived_types() -> &'static [TypeId] {
-        &[]
-    }
-
-    fn query_derived_types(&self) -> &'static [TypeId] {
-        Self::derived_types()
-    }
-
-    fn type_name(&self) -> &'static str {
-        self.instance.type_name()
-    }
-
-    fn doc(&self) -> &'static str {
-        self.instance.doc()
-    }
-
-    fn assembly_name(&self) -> &'static str {
-        self.instance.assembly_name()
-    }
-
-    fn type_assembly_name() -> &'static str {
-        env!("CARGO_PKG_NAME")
-    }
-
-    fn fields_ref(&self, func: &mut dyn FnMut(&[FieldRef])) {
-        self.instance.fields_ref(func)
-    }
-
-    fn fields_mut(&mut self, func: &mut dyn FnMut(&mut [FieldMut])) {
-        self.instance.fields_mut(func)
-    }
-
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self.instance.into_any()
-    }
-
-    fn as_any(&self, func: &mut dyn FnMut(&dyn Any)) {
-        self.instance.deref().as_any(func)
-    }
-
-    fn as_any_mut(&mut self, func: &mut dyn FnMut(&mut dyn Any)) {
-        self.instance.deref_mut().as_any_mut(func)
-    }
-
-    fn as_reflect(&self, func: &mut dyn FnMut(&dyn Reflect)) {
-        self.instance.deref().as_reflect(func)
-    }
-
-    fn as_reflect_mut(&mut self, func: &mut dyn FnMut(&mut dyn Reflect)) {
-        self.instance.deref_mut().as_reflect_mut(func)
-    }
-
-    fn set(&mut self, value: Box<dyn Reflect>) -> Result<Box<dyn Reflect>, Box<dyn Reflect>> {
-        self.instance.deref_mut().set(value)
-    }
-
-    fn field(&self, name: &str, func: &mut dyn FnMut(Option<&dyn Reflect>)) {
-        self.instance.deref().field(name, func)
-    }
-
-    fn field_mut(&mut self, name: &str, func: &mut dyn FnMut(Option<&mut dyn Reflect>)) {
-        self.instance.deref_mut().field_mut(name, func)
-    }
-
-    fn as_array(&self, func: &mut dyn FnMut(Option<&dyn ReflectArray>)) {
-        self.instance.deref().as_array(func)
-    }
-
-    fn as_array_mut(&mut self, func: &mut dyn FnMut(Option<&mut dyn ReflectArray>)) {
-        self.instance.deref_mut().as_array_mut(func)
-    }
-
-    fn as_list(&self, func: &mut dyn FnMut(Option<&dyn ReflectList>)) {
-        self.instance.deref().as_list(func)
-    }
-
-    fn as_list_mut(&mut self, func: &mut dyn FnMut(Option<&mut dyn ReflectList>)) {
-        self.instance.deref_mut().as_list_mut(func)
-    }
-
-    fn try_clone_box(&self) -> Option<Box<dyn Reflect>> {
-        Some(Box::new(self.clone()))
+impl PartialEq for Script {
+    fn eq(&self, other: &Self) -> bool {
+        self.instance
+            .try_compare(&*other.instance)
+            .unwrap_or_default()
     }
 }
 
@@ -909,18 +808,14 @@ impl Script {
 
     /// Tries to borrow a component of given type.
     #[inline]
-    pub fn query_component_ref<T: Any>(&self) -> Option<&T> {
-        self.instance
-            .query_component_ref(TypeId::of::<T>())
-            .and_then(|c| c.downcast_ref())
+    pub fn self_or_field_ref<T: Reflect>(&self) -> Option<&T> {
+        (self.instance.deref() as &dyn Reflect).self_or_field_ref()
     }
 
     /// Tries to borrow a component of given type.
     #[inline]
-    pub fn query_component_mut<T: Any>(&mut self) -> Option<&mut T> {
-        self.instance
-            .query_component_mut(TypeId::of::<T>())
-            .and_then(|c| c.downcast_mut())
+    pub fn self_or_field_mut<T: Reflect>(&mut self) -> Option<&mut T> {
+        (self.instance.deref_mut() as &mut dyn Reflect).self_or_field_mut()
     }
 }
 
@@ -929,21 +824,18 @@ mod test {
     use crate::scene::base::ScriptRecord;
     use crate::{
         core::{
-            impl_component_provider, reflect::prelude::*, variable::try_inherit_properties,
-            variable::InheritableVariable, visitor::prelude::*,
+            reflect::prelude::*, variable::try_inherit_properties, variable::InheritableVariable,
+            visitor::prelude::*,
         },
         scene::base::Base,
         script::{Script, ScriptTrait},
     };
-    use fyrox_core::uuid_provider;
 
-    #[derive(Reflect, Visit, Debug, Clone, Default)]
+    #[derive(PartialEq, Reflect, Visit, Debug, Clone, Default)]
+    #[reflect(type_uuid = "eed9bf56-7d71-44a0-ba8e-0f3163c59669")]
     struct MyScript {
         field: InheritableVariable<f32>,
     }
-
-    impl_component_provider!(MyScript);
-    uuid_provider!(MyScript = "eed9bf56-7d71-44a0-ba8e-0f3163c59669");
 
     impl ScriptTrait for MyScript {}
 
@@ -961,11 +853,7 @@ mod test {
             field: InheritableVariable::new_non_modified(3.21),
         })));
 
-        child.as_reflect_mut(&mut |child| {
-            parent.as_reflect(&mut |parent| {
-                try_inherit_properties(child, parent, &[]).unwrap();
-            })
-        });
+        try_inherit_properties(&mut child, &parent, &[]).unwrap();
 
         assert_eq!(
             *child.script(0).unwrap().cast::<MyScript>().unwrap().field,
@@ -983,11 +871,7 @@ mod test {
             field: InheritableVariable::new_non_modified(3.21),
         });
 
-        child.as_reflect_mut(&mut |child| {
-            parent.as_reflect(&mut |parent| {
-                try_inherit_properties(child, parent, &[]).unwrap();
-            })
-        });
+        try_inherit_properties(&mut child, &parent, &[]).unwrap();
 
         assert_eq!(*child.cast::<MyScript>().unwrap().field, 3.21);
     }
@@ -1002,11 +886,7 @@ mod test {
             field: InheritableVariable::new_non_modified(3.21),
         }));
 
-        child.as_reflect_mut(&mut |child| {
-            parent.as_reflect(&mut |parent| {
-                try_inherit_properties(child, parent, &[]).unwrap();
-            })
-        });
+        try_inherit_properties(&mut child, &parent, &[]).unwrap();
 
         assert_eq!(
             *child.as_ref().unwrap().cast::<MyScript>().unwrap().field,

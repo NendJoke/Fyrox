@@ -27,8 +27,6 @@ use crate::fyrox::{
         algebra::{Point2, Vector2},
         pool::Handle,
         reflect::prelude::*,
-        type_traits::prelude::*,
-        uuid_provider,
         visitor::prelude::*,
     },
     gui::{
@@ -53,8 +51,11 @@ pub enum ThumbMessage {
 }
 impl MessageData for ThumbMessage {}
 
-#[derive(Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "820ba009-54e0-4050-ba7e-28f1f5b40429"
+)]
 pub struct Thumb {
     widget: Widget,
     #[visit(skip)]
@@ -73,8 +74,6 @@ impl Thumb {
             .x
     }
 }
-
-uuid_provider!(Thumb = "820ba009-54e0-4050-ba7e-28f1f5b40429");
 
 impl Control for Thumb {
     fn draw(&self, ctx: &mut DrawingContext) {

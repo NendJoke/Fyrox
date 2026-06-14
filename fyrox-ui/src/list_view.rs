@@ -27,8 +27,8 @@ use crate::{
     border::BorderBuilder,
     brush::Brush,
     core::{
-        color::Color, pool::Handle, reflect::prelude::*, type_traits::prelude::*, uuid_provider,
-        variable::InheritableVariable, visitor::prelude::*,
+        color::Color, pool::Handle, reflect::prelude::*, variable::InheritableVariable,
+        visitor::prelude::*,
     },
     decorator::{Decorator, DecoratorMessage},
     draw::{CommandTexture, Draw, DrawingContext},
@@ -233,9 +233,12 @@ impl ListViewMessage {
 ///     ui.send(my_list_view, ListViewMessage::BringItemIntoView(my_item));
 /// }
 /// ```
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
 #[visit(optional)]
-#[reflect(derived_type = "UiNode")]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "5832a643-5bf9-4d84-8358-b4c45bb440e8"
+)]
 pub struct ListView {
     /// Base widget of the list view.
     pub widget: Widget,
@@ -322,8 +325,11 @@ impl ListView {
 }
 
 /// A wrapper for list view items, that is used to add selection functionality to arbitrary items.
-#[derive(Default, Clone, Visit, Reflect, Debug, ComponentProvider)]
-#[reflect(derived_type = "UiNode")]
+#[derive(Default, Clone, Visit, PartialEq, Reflect, Debug)]
+#[reflect(
+    derived_type = "UiNode",
+    type_uuid = "02f21415-5843-42f5-a3e4-b4a21e7739ad"
+)]
 pub struct ListViewItem {
     /// Base widget of the list view item.
     pub widget: Widget,
@@ -345,8 +351,6 @@ impl ConstructorProvider<UiNode, UserInterface> for ListViewItem {
 }
 
 crate::define_widget_deref!(ListViewItem);
-
-uuid_provider!(ListViewItem = "02f21415-5843-42f5-a3e4-b4a21e7739ad");
 
 impl Control for ListViewItem {
     fn draw(&self, drawing_context: &mut DrawingContext) {
@@ -398,8 +402,6 @@ impl Control for ListViewItem {
         }
     }
 }
-
-uuid_provider!(ListView = "5832a643-5bf9-4d84-8358-b4c45bb440e8");
 
 impl Control for ListView {
     fn handle_routed_message(&mut self, ui: &mut UserInterface, message: &mut UiMessage) {

@@ -21,11 +21,11 @@
 use crate::{
     brush::Brush,
     core::{
-        algebra::Vector2, color::Color, log::Log, math::Rect, reflect::prelude::*, uuid_provider,
+        algebra::Vector2, color::Color, log::Log, math::Rect, reflect::prelude::*,
         variable::InheritableVariable, visitor::prelude::*,
     },
     font::{Font, FontGlyph, FontHeight, FontResource, BUILT_IN_FONT},
-    style::StyledProperty,
+    style::{resource::StyleResource, StyledProperty},
     HorizontalAlignment, Thickness, VerticalAlignment,
 };
 use fyrox_resource::state::{LoadError, ResourceState};
@@ -46,6 +46,7 @@ const ELLIPSIS: char = '…';
 
 /// Defines a position in the text. It is just a coordinates of a character in text.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Visit, Reflect)]
+#[reflect(type_uuid = "dcc6b193-e4e3-49a8-af7e-052cac80c9b2")]
 pub struct Position {
     /// Line index.
     pub line: usize,
@@ -54,7 +55,7 @@ pub struct Position {
     pub offset: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct TextGlyph {
     pub bounds: Rect<f32>,
     pub tex_coords: [Vector2<f32>; 4],
@@ -62,7 +63,7 @@ pub struct TextGlyph {
     pub source_char_index: usize,
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub struct TextLine {
     /// Index of starting symbol in text array.
     pub begin: usize,
@@ -119,6 +120,7 @@ impl TextLine {
     EnumString,
     VariantNames,
 )]
+#[reflect(type_uuid = "f1290ceb-3fee-461f-a1e9-f9450bd06805")]
 pub enum WrapMode {
     /// No wrapping needed.
     #[default]
@@ -130,8 +132,6 @@ pub enum WrapMode {
     /// Word-based wrapping.
     Word,
 }
-
-uuid_provider!(WrapMode = "f1290ceb-3fee-461f-a1e9-f9450bd06805");
 
 struct GlyphMetrics<'a> {
     font: &'a mut Font,
@@ -256,7 +256,8 @@ impl LineSink for WrapSink<'_> {
     }
 }
 
-#[derive(Default, Clone, Debug, Visit, Reflect)]
+#[derive(Default, Clone, Debug, Visit, PartialEq, Reflect)]
+#[reflect(type_uuid = "a48f1f1d-24ce-4a84-a45d-706ac541cf0a")]
 pub struct FormattedText {
     font: InheritableVariable<Option<FontResource>>,
     pub text: InheritableVariable<Vec<char>>,
@@ -724,6 +725,12 @@ impl FormattedText {
     /// Sets desired shadow offset in units.
     pub fn set_shadow_offset(&mut self, offset: Vector2<f32>) -> &mut Self {
         self.shadow_offset.set_value_and_mark_modified(offset);
+        self
+    }
+
+    /// Sets desired style.
+    pub fn set_style(&mut self, style: &StyleResource) -> &mut Self {
+        self.font_size.update(style);
         self
     }
 

@@ -35,11 +35,10 @@ use crate::{
             pool::{ErasedHandle, Handle},
             reflect::Reflect,
             visitor::Visitor,
-            Uuid,
         },
         engine::{Engine, SerializationContext},
         fxhash::FxHashSet,
-        graph::{SceneGraph, SceneGraphNode},
+        graph::{NodeWrapper, SceneGraph},
         gui::{
             inspector::PropertyChanged,
             message::UiMessage,
@@ -96,6 +95,8 @@ use crate::{
     world::selection::GraphSelection,
     Message, Settings,
 };
+use fyrox::core::blank_reflect_ref;
+use fyrox::core::uuid::Uuid;
 use fyrox::engine::GraphicsContext;
 use fyrox::gui::file_browser::FileType;
 use fyrox::scene::collider::BitMask;
@@ -352,21 +353,21 @@ impl GameScene {
                 if settings.debugging.show_tbn {
                     node.debug_draw(ctx);
                 }
-            } else if node.component_ref::<Camera>().is_some() {
+            } else if node.self_or_field_ref::<Camera>().is_some() {
                 if settings.debugging.show_camera_bounds {
                     node.debug_draw(ctx);
                 }
-            } else if node.component_ref::<PointLight>().is_some()
-                || node.component_ref::<SpotLight>().is_some()
+            } else if node.self_or_field_ref::<PointLight>().is_some()
+                || node.self_or_field_ref::<SpotLight>().is_some()
             {
                 if settings.debugging.show_light_bounds {
                     node.debug_draw(ctx);
                 }
-            } else if node.component_ref::<Terrain>().is_some() {
+            } else if node.self_or_field_ref::<Terrain>().is_some() {
                 if settings.debugging.show_terrains {
                     node.debug_draw(ctx);
                 }
-            } else if let Some(navmesh) = node.component_ref::<NavigationalMesh>() {
+            } else if let Some(navmesh) = node.self_or_field_ref::<NavigationalMesh>() {
                 if settings.navmesh.draw_all {
                     let selection = editor_selection.as_navmesh();
 
@@ -1204,6 +1205,10 @@ impl dyn SelectionContainer {
 
 #[derive(Debug, Default)]
 pub struct Selection(pub Option<Box<dyn SelectionContainer>>);
+
+impl Reflect for &'static mut Selection {
+    blank_reflect_ref!("f740f60a-ade1-4357-ac6f-7088e9189518");
+}
 
 impl PartialEq for Selection {
     fn eq(&self, other: &Self) -> bool {
